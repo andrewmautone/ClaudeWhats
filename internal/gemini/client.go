@@ -52,12 +52,14 @@ func (c *Client) generate(ctx context.Context, parts []part) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	url := fmt.Sprintf("%s/v1beta/models/%s:generateContent?key=%s", c.BaseURL, c.Model, c.APIKey)
+	url := fmt.Sprintf("%s/v1beta/models/%s:generateContent", c.BaseURL, c.Model)
 	hr, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
 	if err != nil {
 		return "", err
 	}
 	hr.Header.Set("Content-Type", "application/json")
+	// header, not query string: the URL ends up in transport errors and logs
+	hr.Header.Set("x-goog-api-key", c.APIKey)
 	resp, err := c.HTTP.Do(hr)
 	if err != nil {
 		return "", err

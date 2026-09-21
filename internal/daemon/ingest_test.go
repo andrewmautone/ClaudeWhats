@@ -99,6 +99,33 @@ func TestIngestDownloadFailure(t *testing.T) {
 	}
 }
 
+func TestIngestMediaPathTraversalIsSanitized(t *testing.T) {
+	in, s := newIngester(t, fakeDL{data: []byte("PDF")})
+	outside := filepath.Join(filepath.Dir(in.MediaDir), "evil")
+	doc := &waE2E.Message{DocumentMessage: &waE2E.DocumentMessage{Mimetype: proto.String("application/pdf"), FileName: proto.String(`a.\..\evil`)}}
+	in.OnMessage(evt("5511888@s.whatsapp.net", "5511888@s.whatsapp.net", "", `..\..\x`, false, doc))
+	ms, _ := s.ReadMessages("5511888@s.whatsapp.net", 0, 10)
+	if len(ms) != 1 || ms[0].MediaPath == "" {
+		t.Fatalf("%+v", ms)
+	}
+	rel, err := filepath.Rel(in.MediaDir, ms[0].MediaPath)
+	if err != nil || rel != filepath.Join("5511888", "_.._x._evil") {
+		t.Fatalf("media escaped MediaDir: %s (rel %s)", ms[0].MediaPath, rel)
+	}
+	if _, err := os.Stat(outside); err == nil {
+		t.Fatal("file written outside MediaDir")
+	}
+	if b, _ := os.ReadFile(ms[0].MediaPath); string(b) != "PDF" {
+		t.Fatalf("media not written at %s", ms[0].MediaPath)
+	}
+	if got := safeName(`..\..\x`); got != "_.._x" {
+		t.Fatalf("safeName id: %q", got)
+	}
+	if got := safeName("B1.ogg"); got != "B1.ogg" {
+		t.Fatalf("safeName plain: %q", got)
+	}
+}
+
 func TestOnGroupAndPushName(t *testing.T) {
 	in, s := newIngester(t, fakeDL{})
 	g, _ := types.ParseJID("123@g.us")

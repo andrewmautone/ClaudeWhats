@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -111,12 +112,36 @@ func (in *Ingester) saveMedia(chat, id string, cl wa.Classified) (string, error)
 	if i := strings.IndexByte(chat, '@'); i >= 0 {
 		user = chat[:i]
 	}
-	dir := filepath.Join(in.MediaDir, user)
+	// id and ext come from the wire (stanza id / document fileName): sanitize
+	// them and double-check the final path stays under MediaDir.
+	dir := filepath.Join(in.MediaDir, safeName(user))
+	path := filepath.Join(dir, safeName(id+cl.Ext))
+	if rel, err := filepath.Rel(in.MediaDir, path); err != nil || rel == "." || strings.HasPrefix(rel, "..") {
+		return "", fmt.Errorf("bad media path %q", path)
+	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
-	path := filepath.Join(dir, id+cl.Ext)
 	return path, os.WriteFile(path, data, 0o600)
+}
+
+// safeName keeps only [A-Za-z0-9._-], replaces everything else with '_' and
+// strips leading dots, so the result can never escape its directory.
+func safeName(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '.', r == '_', r == '-':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
+	}
+	out := strings.TrimLeft(b.String(), ".")
+	if out == "" {
+		return "_"
+	}
+	return out
 }
 
 func (in *Ingester) OnGroup(jid types.JID, name string, members []types.JID) {

@@ -11,8 +11,8 @@ import (
 
 func fakeServer(t *testing.T, reply string, capture *map[string]any) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !strings.Contains(r.URL.Path, "models/test-model:generateContent") || r.URL.Query().Get("key") != "k" {
-			t.Errorf("bad request %s %s", r.URL.Path, r.URL.RawQuery)
+		if !strings.Contains(r.URL.Path, "models/test-model:generateContent") || r.Header.Get("x-goog-api-key") != "k" || r.URL.Query().Get("key") != "" {
+			t.Errorf("bad request %s %s %q", r.URL.Path, r.URL.RawQuery, r.Header.Get("x-goog-api-key"))
 		}
 		json.NewDecoder(r.Body).Decode(capture)
 		w.Write([]byte(`{"candidates":[{"content":{"parts":[{"text":"` + reply + `"}]}}]}`))
