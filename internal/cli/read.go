@@ -48,9 +48,22 @@ func init() {
 			if err != nil {
 				return err
 			}
+			var mem []string
+			if !noMemory {
+				if ms, err := memoryStore(cfg); err == nil {
+					mem = memoryBlock(ms, chat)
+				}
+			}
 			kick(cfg)
-			return emit(msgs, func() {
+			return emit(map[string]any{"chat": chat, "memory": mem, "messages": msgs}, func() {
 				printf("# %s (%s)\n", chat.Name, chat.JID)
+				if len(mem) > 0 {
+					printf("## memória\n")
+					for _, l := range mem {
+						printf("%s\n", l)
+					}
+					printf("\n")
+				}
 				printMessages(msgs)
 			})
 		},

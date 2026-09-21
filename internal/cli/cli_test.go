@@ -49,10 +49,15 @@ func TestChatsAndReadText(t *testing.T) {
 }
 
 func TestReadJSONAndSearch(t *testing.T) {
+	t.Setenv("CLAUDEWHATS_MEMORY_DIR", t.TempDir())
 	s := testStore(t)
 	out := run(t, s, "read", "5511888", "--json", "--no-spawn", "--limit", "1")
-	var msgs []store.Message
-	if err := json.Unmarshal([]byte(out), &msgs); err != nil || len(msgs) != 1 || msgs[0].ID != "m2" {
+	var payload struct {
+		Chat     store.Chat      `json:"chat"`
+		Memory   []string        `json:"memory"`
+		Messages []store.Message `json:"messages"`
+	}
+	if err := json.Unmarshal([]byte(out), &payload); err != nil || len(payload.Messages) != 1 || payload.Messages[0].ID != "m2" {
 		t.Fatalf("%v %s", err, out)
 	}
 	out = run(t, s, "search", "bolo", "--no-spawn")
@@ -129,5 +134,57 @@ func TestSummaryPerChatAndOverall(t *testing.T) {
 	out = run(t, s, "summary", "--chat", "maria", "--no-spawn", "--since", "0", "--json")
 	if !strings.Contains(out, `"summary"`) {
 		t.Fatal(out)
+	}
+}
+
+func TestMemoryCommandsAndBlock(t *testing.T) {
+	t.Setenv("CLAUDEWHATS_MEMORY_DIR", t.TempDir())
+	s := testStore(t)
+
+	out := run(t, s, "memory", "note", "Maria prefere entrega às 18h")
+	if !strings.Contains(out, "Saved as #0.") {
+		t.Fatal(out)
+	}
+
+	out = run(t, s, "read", "maria", "--no-spawn")
+	if !strings.Contains(out, "## memória") || !strings.Contains(out, "Maria prefere") {
+		t.Fatal(out)
+	}
+
+	out = run(t, s, "read", "maria", "--no-spawn", "--no-memory")
+	if strings.Contains(out, "## memória") {
+		t.Fatal(out)
+	}
+
+	out = run(t, s, "read", "maria", "--no-spawn", "--json")
+	var payload struct {
+		Chat     store.Chat      `json:"chat"`
+		Memory   []string        `json:"memory"`
+		Messages []store.Message `json:"messages"`
+	}
+	if err := json.Unmarshal([]byte(out), &payload); err != nil || len(payload.Memory) != 1 || len(payload.Messages) != 2 {
+		t.Fatalf("%v %s", err, out)
+	}
+
+	out = run(t, s, "memory", "recall", "prefere", "--json")
+	var recalled struct {
+		Lines []string `json:"lines"`
+	}
+	if err := json.Unmarshal([]byte(out), &recalled); err != nil || len(recalled.Lines) != 1 {
+		t.Fatalf("%v %s", err, out)
+	}
+
+	out = run(t, s, "memory", "wake")
+	if !strings.Contains(out, "You are awake.") {
+		t.Fatal(out)
+	}
+
+	t.Setenv("CLAUDEWHATS_MEMORY_DIR", t.TempDir()) // fresh, empty tree
+	out, err := runWith(s, "memory", "zoom", "0-1")
+	if err == nil {
+		t.Fatalf("expected zoom error, got success: %s", out)
+	}
+	if !strings.Contains(out, "is beyond the memory") {
+		t.Fatalf("%v %s", err, out)
 	}
 }

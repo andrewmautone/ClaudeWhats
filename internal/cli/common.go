@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/andrewmautone/claudewhats/internal/config"
 	"github.com/andrewmautone/claudewhats/internal/daemon"
+	"github.com/andrewmautone/claudewhats/internal/memory"
 	"github.com/andrewmautone/claudewhats/internal/store"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -18,12 +20,42 @@ import (
 
 var (
 	noSpawn       bool
+	noMemory      bool
 	storeOverride *store.Store
 	out           io.Writer = os.Stdout
 )
 
 func init() {
 	root.PersistentFlags().BoolVar(&noSpawn, "no-spawn", false, "não acorda o daemon em background")
+	root.PersistentFlags().BoolVar(&noMemory, "no-memory", false, "não inclui o bloco de memória")
+}
+
+// memoryStore opens (creating if needed) the memory directory. It never
+// opens a store when the directory can't be created: the error must surface.
+func memoryStore(cfg *config.Config) (*memory.Store, error) {
+	s, _, err := memory.Create(memory.DefaultDir())
+	if err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+// memoryBlock returns the lines of the "## memória" block for chat, or nil
+// when there is nothing to show (or --no-memory). One RecallLines call,
+// matching the chat's jid or contact name, case-insensitively.
+func memoryBlock(s *memory.Store, chat store.Chat) []string {
+	if noMemory || s == nil {
+		return nil
+	}
+	pattern := regexp.QuoteMeta(chat.JID)
+	if chat.Name != "" {
+		pattern += "|" + regexp.QuoteMeta(chat.Name)
+	}
+	lines, err := s.RecallLines(pattern, 20)
+	if err != nil || len(lines) == 0 {
+		return nil
+	}
+	return lines
 }
 
 func openStore() (*config.Config, *store.Store, error) {

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 
@@ -32,9 +33,16 @@ func emit(v any, text func()) error {
 	return nil
 }
 
+// errSilent marks an error whose text was already written to out by the
+// command itself (verbatim, Python-compatible text); Execute must not
+// prepend "erro:" or print it again.
+var errSilent = errors.New("silent")
+
 func Execute() {
 	if err := root.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, "erro:", err)
+		if err != errSilent {
+			fmt.Fprintln(os.Stderr, "erro:", err)
+		}
 		os.Exit(1)
 	}
 }

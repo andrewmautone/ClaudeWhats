@@ -64,14 +64,22 @@ func init() {
 				ai = gemini.New(cfg.GeminiAPIKey, cfg.GeminiModel)
 			}
 			var chats []store.Chat
+			var resolved store.Chat
 			if chat != "" {
 				c, err := s.ResolveChat(chat)
 				if err != nil {
 					return err
 				}
+				resolved = c
 				chats = []store.Chat{c}
 			} else if chats, err = s.ListChats(sv, ""); err != nil {
 				return err
+			}
+			var mem []string
+			if chat != "" && !noMemory {
+				if ms, err := memoryStore(cfg); err == nil {
+					mem = memoryBlock(ms, resolved)
+				}
 			}
 			ctx := context.Background()
 			var results []chatSummary
@@ -100,7 +108,14 @@ func init() {
 				}
 			}
 			kick(cfg)
-			return emit(map[string]any{"chats": results, "overall": overall}, func() {
+			return emit(map[string]any{"chats": results, "overall": overall, "memory": mem}, func() {
+				if len(mem) > 0 {
+					printf("## memória\n")
+					for _, l := range mem {
+						printf("%s\n", l)
+					}
+					printf("\n")
+				}
 				for _, r := range results {
 					printf("## %s (%d msgs)\n%s\n\n", r.Chat, r.Count, r.Summary)
 				}

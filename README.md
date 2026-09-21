@@ -10,6 +10,9 @@ Arquivo local do seu WhatsApp (SQLite) com transcrição de áudio/imagem via Ge
 
 O daemon sobe sozinho em background quando um comando precisa e encerra após 30 min ocioso (`idle_timeout` no config). Log em `~/.claudewhats/daemon.log`; `claudewhats stop` encerra.
 
+## Memória
+`claudewhats memory` é uma porta em Go do `memo` do OptMem (github.com/VictorTaelin/OptMem), byte-compatível com o formato em disco. Ela mora em `$CLAUDEWHATS_MEMORY_DIR` (padrão `~/.claudewhats/memory`), separada do banco de mensagens, e é usada pela skill para lembrar de pessoas, grupos e combinados entre sessões (`wake`, `note`, `nap`, `recall`, `zoom`, `forget` — veja `skill/SKILL.md`). `read`/`summary --chat X` incluem automaticamente um bloco `## memória` com o que já se sabe sobre aquele chat (`--no-memory` desliga). Por ser byte-compatível, a mesma pasta pode ser lida pelo `memo` original em Python: `MEMORY_DIR=~/.claudewhats/memory ~/.optmem/memo wake`.
+
 ## Skill
 Copie `skill/` para `~/.claude/skills/claudewhats/`.
 
