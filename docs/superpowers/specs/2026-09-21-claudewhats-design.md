@@ -151,3 +151,28 @@ REST `generativelanguage.googleapis.com`, modelo configurável (default `gemini-
 ## Fora de escopo (v1)
 
 Envio de mídia, reações, MCP, multi-conta, UI.
+
+## Memória OptMem (adicionado 21/09, tarde)
+
+Port em Go do `memo` do OptMem (github.com/VictorTaelin/OptMem), como subcomando
+`claudewhats memory <wake|note|nap|recall|zoom|forget>`, **byte-compatível** com o formato
+original: `LOG.txt` com registros fixos de 320 bytes (`#i YYYY-MM-DD texto` + padding),
+`TREE/<size>` com registros de 288 bytes, entrada ≤ 280 bytes, árvore binária de blocos
+alinhados em potência de 2, mesma função de cobertura do `wake` (WAKE_LINES=96), mesmos
+prompts de `nap`. Dados em `~/.claudewhats/memory/` (uma árvore global). O python
+original lê o mesmo diretório via `MEMORY_DIR`.
+
+Quem escreve e comprime é o Claude (via skill), não o daemon.
+
+Integração "memória antes do banco":
+- `read <chat>` e `summary --chat X` imprimem primeiro um bloco `## memória` com o
+  resultado de `recall` para o jid e o nome do chat (só se houver match). `--no-memory`
+  desliga. Em `--json` vem como campo `memory: []string`.
+- SKILL.md: regra 1 = `memory wake` no início; `memory note` ao aprender algo relevante
+  sobre uma pessoa/assunto; fazer os `nap` que o comando pedir antes de continuar.
+
+Performance (requisito): nenhum comando carrega o LOG inteiro exceto `recall`, que faz
+streaming em blocos de 320 bytes com regex compilada uma vez. `wake` lê apenas os
+registros da cobertura por `seek`. `note` = um `append` + prompt de nap calculado por
+contagem (`stat`), sem leitura. Meta: cada `memory *` < 20 ms com 10k memórias
+(benchmark no plano). Lock de escrita por arquivo (`LOCK`) com `flock`/`LockFileEx`.
