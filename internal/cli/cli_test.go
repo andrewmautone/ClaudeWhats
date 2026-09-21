@@ -2,7 +2,9 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -95,4 +97,32 @@ func TestParseSince(t *testing.T) {
 		t.Fatal("invalid")
 	}
 	var _ bytes.Buffer
+}
+
+type fakeSum struct{ got []string }
+
+func (f *fakeSum) Summarize(ctx context.Context, instr, text string) (string, error) {
+	f.got = append(f.got, text)
+	return "RESUMO(" + strconv.Itoa(strings.Count(text, "\n")+1) + " linhas)", nil
+}
+
+func TestSummaryPerChatAndOverall(t *testing.T) {
+	s := testStore(t)
+	f := &fakeSum{}
+	summarizerOverride = f
+	defer func() { summarizerOverride = nil }()
+	out := run(t, s, "summary", "--no-spawn", "--since", "0")
+	if !strings.Contains(out, "## Família") || !strings.Contains(out, "## Maria") || !strings.Contains(out, "## Geral") {
+		t.Fatal(out)
+	}
+	if len(f.got) != 3 { // 2 chats + geral
+		t.Fatalf("calls %d", len(f.got))
+	}
+	if !strings.Contains(f.got[0], "vou levar o bolo") && !strings.Contains(f.got[1], "vou levar o bolo") {
+		t.Fatal("transcript must be in summary input")
+	}
+	out = run(t, s, "summary", "--chat", "maria", "--no-spawn", "--since", "0", "--json")
+	if !strings.Contains(out, `"summary"`) {
+		t.Fatal(out)
+	}
 }
