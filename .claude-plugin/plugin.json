@@ -1,0 +1,13 @@
+{
+  "name": "claudewhats",
+  "version": "0.1.0",
+  "description": "WhatsApp local (SQLite) com transcrição Gemini, exposto como CLI e skill para o Claude",
+  "author": {
+    "name": "Andrew Mautone",
+    "url": "https://github.com/andrewmautone"
+  },
+  "homepage": "https://github.com/andrewmautone/ClaudeWhats",
+  "repository": "https://github.com/andrewmautone/ClaudeWhats",
+  "license": "MIT",
+  "keywords": ["whatsapp", "cli", "gemini", "memory", "claude-code-plugin"]
+}

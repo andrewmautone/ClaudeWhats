@@ -2,19 +2,33 @@
 
 Arquivo local do seu WhatsApp (SQLite) com transcrição de áudio/imagem via Gemini e CLI feita para o Claude.
 
-## Setup
-1. `go build -o claudewhats.exe ./cmd/claudewhats` e coloque no PATH.
+## Instalação
+
+1. No Claude Code: `/plugin marketplace add andrewmautone/ClaudeWhats` e `/plugin install claudewhats@claudewhats`. Isso instala a skill e coloca `claudewhats` no PATH (via os shims em `bin/`, que baixam o binário da release na primeira execução).
 2. `~/.claudewhats/config.yaml`: `gemini_api_key: ...` (ou env `GEMINI_API_KEY`).
-3. `claudewhats serve` → escaneie o QR (WhatsApp > Aparelhos conectados). Ctrl+C depois de "conectado".
-4. Pronto: `claudewhats chats`, `read`, `search`, `summary`, `send`, `sync`, `contact`.
+3. `claudewhats serve` uma vez, no seu próprio terminal, para escanear o QR (WhatsApp > Aparelhos conectados). Ctrl+C depois de "conectado".
 
 O daemon sobe sozinho em background quando um comando precisa e encerra após 30 min ocioso (`idle_timeout` no config). Log em `~/.claudewhats/daemon.log`; `claudewhats stop` encerra.
 
+## Primeiro uso
+
+Depois do pareamento, peça ao Claude para ver suas conversas — a skill cuida do resto (`claudewhats chats`, `read`, `search`, `summary`, `send`, `sync`, `contact`).
+
+## Atualizar
+
+- Skill/plugin: `/plugin update claudewhats`.
+- Binário: `rm ~/.claudewhats/bin/claudewhats*` para forçar o download da última release na próxima chamada, ou fixe uma versão com `CLAUDEWHATS_VERSION=vX.Y.Z`.
+
+## Instalar sem plugin
+
+- Baixe o asset certo (`claudewhats_<os>_<arch>[.exe]` + `checksums.txt`) em https://github.com/andrewmautone/ClaudeWhats/releases/latest e coloque no PATH; ou
+- `go install github.com/andrewmautone/claudewhats/cmd/claudewhats@latest`.
+
 ## Memória
-`claudewhats memory` é uma porta em Go do `memo` do OptMem (github.com/VictorTaelin/OptMem), byte-compatível com o formato em disco. Ela mora em `$CLAUDEWHATS_MEMORY_DIR` (padrão `~/.claudewhats/memory`), separada do banco de mensagens, e é usada pela skill para lembrar de pessoas, grupos e combinados entre sessões (`wake`, `note`, `nap`, `recall`, `zoom`, `forget` — veja `skill/SKILL.md`). `read`/`summary --chat X` incluem automaticamente um bloco `## memória` com o que já se sabe sobre aquele chat (`--no-memory` desliga). Por ser byte-compatível, a mesma pasta pode ser lida pelo `memo` original em Python: `MEMORY_DIR=~/.claudewhats/memory ~/.optmem/memo wake`.
+`claudewhats memory` é uma porta em Go do `memo` do OptMem (github.com/VictorTaelin/OptMem), byte-compatível com o formato em disco. Ela mora em `$CLAUDEWHATS_MEMORY_DIR` (padrão `~/.claudewhats/memory`), separada do banco de mensagens, e é usada pela skill para lembrar de pessoas, grupos e combinados entre sessões (`wake`, `note`, `nap`, `recall`, `zoom`, `forget` — veja `skills/claudewhats/SKILL.md`). `read`/`summary --chat X` incluem automaticamente um bloco `## memória` com o que já se sabe sobre aquele chat (`--no-memory` desliga). Por ser byte-compatível, a mesma pasta pode ser lida pelo `memo` original em Python: `MEMORY_DIR=~/.claudewhats/memory ~/.optmem/memo wake`.
 
 ## Skill
-Copie `skill/` para `~/.claude/skills/claudewhats/`.
+Instalada automaticamente pelo plugin (`/plugin install claudewhats@claudewhats`); o conteúdo mora em `skills/claudewhats/SKILL.md`. Para usar sem o plugin, copie essa pasta para `~/.claude/skills/claudewhats/`.
 
 ## Smoke test no Windows — fique de olho
 - **Daemon morrendo junto com o CLI pai.** Se quem chamou `claudewhats` roda dentro de um Job Object com kill-on-close (ex.: a ferramenta Bash do Claude Code), o daemon destacado morre quando o pai sai. Sintoma: `claudewhats status` diz que não há daemon logo após um comando que deveria tê-lo acordado. Correção: adicionar `CREATE_BREAKAWAY_FROM_JOB` (0x01000000) em `internal/daemon/spawn_windows.go`, com fallback sem a flag se der `ERROR_ACCESS_DENIED`.

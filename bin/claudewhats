@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# Shim: fetches the claudewhats release binary on first run, then execs it.
+set -euo pipefail
+
+VERSION="${CLAUDEWHATS_VERSION:-latest}"
+if [ "$VERSION" = "latest" ]; then
+  RELEASE_PATH="latest/download"
+else
+  RELEASE_PATH="download/$VERSION"
+fi
+
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*) OS=windows ;;
+  Darwin) OS=darwin ;;
+  *) OS=linux ;;
+esac
+
+case "$(uname -m)" in
+  x86_64|amd64) ARCH=amd64 ;;
+  arm64|aarch64) ARCH=arm64 ;;
+  *) ARCH="$(uname -m)" ;;
+esac
+
+EXT=""
+[ "$OS" = "windows" ] && EXT=".exe"
+
+BIN="${CLAUDEWHATS_BIN:-$HOME/.claudewhats/bin/claudewhats}"
+if [ "$OS" = "windows" ] && [[ "$BIN" != *.exe ]]; then
+  BIN="${BIN}${EXT}"
+fi
+
+ASSET="claudewhats_${OS}_${ARCH}${EXT}"
+URL="https://github.com/andrewmautone/ClaudeWhats/releases/${RELEASE_PATH}/${ASSET}"
+
+if [ ! -x "$BIN" ]; then
+  mkdir -p "$(dirname "$BIN")"
+  echo "baixando claudewhats ${ASSET}..." >&2
+  if command -v curl >/dev/null 2>&1; then
+    if ! curl -fsSL -o "${BIN}.tmp" "$URL"; then
+      echo "erro: falha ao baixar $URL" >&2
+      exit 1
+    fi
+  elif command -v wget >/dev/null 2>&1; then
+    if ! wget -q -O "${BIN}.tmp" "$URL"; then
+      echo "erro: falha ao baixar $URL" >&2
+      exit 1
+    fi
+  else
+    echo "erro: nem curl nem wget disponíveis para baixar $URL" >&2
+    exit 1
+  fi
+  mv "${BIN}.tmp" "$BIN"
+  chmod +x "$BIN"
+fi
+
+exec "$BIN" "$@"

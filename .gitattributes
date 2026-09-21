@@ -1,0 +1,2 @@
+bin/claudewhats text eol=lf
+bin/claudewhats.cmd text eol=crlf
