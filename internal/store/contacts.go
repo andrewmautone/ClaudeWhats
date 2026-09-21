@@ -198,6 +198,15 @@ func (s *Store) SetContactNameIfAuto(jid, name string) error {
 	return err
 }
 
+// SetPushNameIfEmpty fills jid's push name only when none has been seen yet.
+func (s *Store) SetPushNameIfEmpty(jid, name string) error {
+	if name == "" {
+		return nil
+	}
+	_, err := s.db.Exec(`UPDATE identities SET push_name=? WHERE jid=? AND push_name=''`, name, jid)
+	return err
+}
+
 func (s *Store) AddContact(name, number string) (int64, error) {
 	d := digits(number)
 	if d == "" {

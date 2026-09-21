@@ -10,6 +10,8 @@ import (
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/appstate"
 	"go.mau.fi/whatsmeow/proto/waE2E"
+	"go.mau.fi/whatsmeow/proto/waHistorySync"
+	"go.mau.fi/whatsmeow/proto/waSyncAction"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
@@ -25,6 +27,9 @@ type Handler interface {
 	OnGroup(jid types.JID, name string, members []types.JID)
 	OnPushName(jid types.JID, name string)
 	OnContact(jid types.JID, fullName string)
+	// OnChatName carries the name history sync attaches to a conversation
+	// (group subject or address-book name of a DM).
+	OnChatName(jid types.JID, name string)
 	OnLoggedOut()
 }
 
@@ -50,7 +55,11 @@ func Open(ctx context.Context, dbPath string, logger waLog.Logger) (*Client, err
 	if err != nil {
 		return nil, err
 	}
-	return &Client{WA: whatsmeow.NewClient(dev, logger), log: logger}, nil
+	wa := whatsmeow.NewClient(dev, logger)
+	// the initial full app-state sync is the only time the address book arrives in
+	// bulk; without this whatsmeow swallows it and *events.Contact never fires
+	wa.EmitAppStateEventsOnFullSync = true
+	return &Client{WA: wa, log: logger}, nil
 }
 
 func (c *Client) IsPaired() bool { return c.WA.Store.ID != nil }
@@ -83,6 +92,9 @@ func (c *Client) Connect(ctx context.Context, h Handler, onQR func(code string))
 					if err != nil {
 						continue
 					}
+					if name := conversationName(conv); name != "" {
+						h.OnChatName(chat, name)
+					}
 					for _, hm := range conv.GetMessages() {
 						m, err := c.WA.ParseWebMessage(chat, hm.GetMessage())
 						// stubs (revokes, calls, system events) carry no Message: nothing to store
@@ -102,12 +114,15 @@ func (c *Client) Connect(ctx context.Context, h Handler, onQR func(code string))
 			case *events.PushName:
 				h.OnPushName(evt.JID, evt.NewPushName)
 			case *events.Contact:
-				if name := evt.Action.GetFullName(); name != "" {
+				if name := contactName(evt.Action); name != "" {
 					h.OnContact(evt.JID, name)
 				}
 			case *events.Connected:
 				c.goUnavailable(ctx, "connected")
-				go c.syncGroups(ctx, h)
+				go func() {
+					c.syncGroups(ctx, h)
+					c.syncContacts(ctx)
+				}()
 			case *events.AppStateSyncComplete:
 				// right after pairing the push name is empty and SendPresence fails;
 				// retry once the critical block (which carries it) has synced
@@ -167,6 +182,35 @@ func participantJIDs(ps []types.GroupParticipant) []types.JID {
 		out = append(out, p.JID)
 	}
 	return out
+}
+
+// contactName is the address-book name from a contact action: full name, else
+// first name (some phones only fill one of the two).
+func contactName(a *waSyncAction.ContactAction) string {
+	if a == nil {
+		return ""
+	}
+	if n := a.GetFullName(); n != "" {
+		return n
+	}
+	return a.GetFirstName()
+}
+
+// conversationName is the best name a history-sync conversation carries.
+func conversationName(conv *waHistorySync.Conversation) string {
+	if n := conv.GetDisplayName(); n != "" {
+		return n
+	}
+	return conv.GetName()
+}
+
+// syncContacts asks for the app-state patch that carries the address book. On a
+// fresh pairing the full sync already delivers it (see EmitAppStateEventsOnFullSync);
+// this covers sessions paired before that flag was set, whose contacts never arrived.
+func (c *Client) syncContacts(ctx context.Context) {
+	if err := c.WA.FetchAppState(ctx, appstate.WAPatchCriticalUnblockLow, true, false); err != nil {
+		c.log.Warnf("contacts app state: %v", err)
+	}
 }
 
 func (c *Client) syncGroups(ctx context.Context, h Handler) {
