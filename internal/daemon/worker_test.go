@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/andrewmautone/claudewhats/internal/gemini"
 	"github.com/andrewmautone/claudewhats/internal/store"
 )
 
@@ -89,4 +90,32 @@ func TestWorkerMissingFileGivesUp(t *testing.T) {
 		t.Fatal("missing file should fail immediately")
 	}
 	_ = time.Second
+}
+
+func TestWorkerMissingKeyLeavesJobPending(t *testing.T) {
+	s, _ := store.OpenMemory()
+	defer s.Close()
+	seedJob(t, s, t.TempDir(), "audio")
+	w := &Worker{Store: s, AI: &fakeAI{err: gemini.ErrNoKey}, MaxAttempts: 1}
+	worked, err := w.RunOnce(context.Background())
+	if worked || !errors.Is(err, gemini.ErrNoKey) {
+		t.Fatalf("worked=%v err=%v", worked, err)
+	}
+	ms, _ := s.ReadMessages("1@s.whatsapp.net", 0, 1)
+	if ms[0].TranscriptStatus != "pending" {
+		t.Fatalf("missing key must not fail the message: %+v", ms[0])
+	}
+	j, ok, _ := s.NextJob(time.Now().Unix())
+	if !ok || j.Attempts != 0 {
+		t.Fatalf("job must stay pending with no attempt burned: %+v %v", j, ok)
+	}
+	// key configured later: the same job now succeeds
+	w.AI = &fakeAI{out: "agora sim"}
+	if worked, err := w.RunOnce(context.Background()); !worked || err != nil {
+		t.Fatal(worked, err)
+	}
+	ms, _ = s.ReadMessages("1@s.whatsapp.net", 0, 1)
+	if ms[0].Transcript != "agora sim" || ms[0].TranscriptStatus != "done" {
+		t.Fatalf("%+v", ms[0])
+	}
 }

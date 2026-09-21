@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"go.mau.fi/whatsmeow"
+	"go.mau.fi/whatsmeow/appstate"
 	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	"go.mau.fi/whatsmeow/types"
@@ -30,6 +31,7 @@ type Handler interface {
 type Client struct {
 	WA *whatsmeow.Client
 
+	log         waLog.Logger
 	handlerOnce sync.Once
 }
 
@@ -48,7 +50,7 @@ func Open(ctx context.Context, dbPath string, logger waLog.Logger) (*Client, err
 	if err != nil {
 		return nil, err
 	}
-	return &Client{WA: whatsmeow.NewClient(dev, logger)}, nil
+	return &Client{WA: whatsmeow.NewClient(dev, logger), log: logger}, nil
 }
 
 func (c *Client) IsPaired() bool { return c.WA.Store.ID != nil }
@@ -98,8 +100,16 @@ func (c *Client) Connect(ctx context.Context, h Handler, showQR func(code string
 					h.OnContact(evt.JID, name)
 				}
 			case *events.Connected:
-				_ = c.WA.SendPresence(ctx, types.PresenceUnavailable)
+				c.goUnavailable(ctx, "connected")
 				go c.syncGroups(ctx, h)
+			case *events.AppStateSyncComplete:
+				// right after pairing the push name is empty and SendPresence fails;
+				// retry once the critical block (which carries it) has synced
+				if evt.Name == appstate.WAPatchCriticalBlock {
+					c.goUnavailable(ctx, "app state")
+				}
+			case *events.PushNameSetting:
+				c.goUnavailable(ctx, "push name")
 			case *events.LoggedOut:
 				h.OnLoggedOut()
 			}
@@ -128,6 +138,14 @@ func (c *Client) Connect(ctx context.Context, h Handler, showQR func(code string
 	return c.WA.Connect()
 }
 
+// goUnavailable tells WhatsApp this device is not "online", so the phone keeps
+// delivering notifications. Errors are logged, not dropped.
+func (c *Client) goUnavailable(ctx context.Context, why string) {
+	if err := c.WA.SendPresence(ctx, types.PresenceUnavailable); err != nil {
+		c.log.Warnf("presence unavailable (%s): %v", why, err)
+	}
+}
+
 func participantJIDs(ps []types.GroupParticipant) []types.JID {
 	out := make([]types.JID, 0, len(ps))
 	for _, p := range ps {
@@ -151,7 +169,7 @@ func (c *Client) SendText(ctx context.Context, to types.JID, text string) (strin
 	if err != nil {
 		return "", err
 	}
-	_ = c.WA.SendPresence(ctx, types.PresenceUnavailable)
+	c.goUnavailable(ctx, "after send")
 	return resp.ID, nil
 }
 

@@ -2,10 +2,12 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"log"
 	"os"
 	"time"
 
+	"github.com/andrewmautone/claudewhats/internal/gemini"
 	"github.com/andrewmautone/claudewhats/internal/store"
 )
 
@@ -63,6 +65,10 @@ func (w *Worker) RunOnce(ctx context.Context) (bool, error) {
 		w.Store.SetTranscript(job.ChatJID, job.MsgID, "", "skipped")
 		return true, w.Store.CompleteJob(job.ID)
 	}
+	if errors.Is(err, gemini.ErrNoKey) {
+		// not the job's fault: leave it pending so it runs once a key is configured
+		return false, err
+	}
 	if err != nil {
 		w.logf("job %d (%s) attempt %d: %v", job.ID, m.Type, job.Attempts+1, err)
 		_, ferr := w.Store.FailJob(job.ID, now, err.Error(), max)
@@ -80,13 +86,20 @@ func (w *Worker) Run(ctx context.Context) {
 	if poll <= 0 {
 		poll = 3 * time.Second
 	}
+	var lastErr string
 	for {
 		if ctx.Err() != nil {
 			return
 		}
 		worked, err := w.RunOnce(ctx)
-		if err != nil {
+		if err != nil && err.Error() != lastErr {
+			// log each distinct error once, not every poll (e.g. missing key)
 			w.logf("worker: %v", err)
+		}
+		if err == nil {
+			lastErr = ""
+		} else {
+			lastErr = err.Error()
 		}
 		if worked {
 			continue

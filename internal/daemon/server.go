@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"strconv"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/andrewmautone/claudewhats/internal/config"
@@ -165,6 +166,9 @@ func Run(ctx context.Context, cfg *config.Config, background bool, showQR func(s
 		}
 		defer f.Close()
 		logger = log.New(f, "", log.LstdFlags)
+		// detached: stdout/stderr are NUL, so whatsmeow's logger and Go panics
+		// would vanish; route both to the log file before building the WA logger.
+		os.Stdout, os.Stderr = f, f
 	}
 	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", cfg.Port))
 	if err != nil {
@@ -218,7 +222,7 @@ func Run(ctx context.Context, cfg *config.Config, background bool, showQR func(s
 	go hs.Serve(ln)
 
 	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, os.Interrupt)
+	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
 	select {
 	case <-sig:
 	case <-ctx.Done():
