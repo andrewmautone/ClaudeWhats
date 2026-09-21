@@ -3,7 +3,6 @@ package daemon
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -30,22 +29,52 @@ type Sender interface {
 }
 
 type StatusResponse struct {
-	OK          bool  `json:"ok"`
-	Connected   bool  `json:"connected"`
-	Messages    int64 `json:"messages"`
-	PendingJobs int64 `json:"pending_jobs"`
-	PID         int   `json:"pid"`
+	OK          bool   `json:"ok"`
+	Connected   bool   `json:"connected"`
+	Paired      bool   `json:"paired"`
+	Pairing     bool   `json:"pairing"`
+	QRUpdatedAt int64  `json:"qr_updated_at"`
+	QRPNG       string `json:"qr_png"`
+	QRTxt       string `json:"qr_txt"`
+	Messages    int64  `json:"messages"`
+	PendingJobs int64  `json:"pending_jobs"`
+	PID         int    `json:"pid"`
 }
 
 type Server struct {
-	Store    *store.Store
+	Store *store.Store
+	// WA is nil until WhatsApp is connected (the HTTP server is up while pairing);
+	// set it via SetWA once handlers may be running.
 	WA       Sender
+	Pair     *pairState
 	Idle     time.Duration
 	Log      *log.Logger
 	Shutdown func()
 
 	mu       sync.Mutex
 	lastSeen time.Time
+}
+
+// SetWA publishes the connected client to the handlers.
+func (s *Server) SetWA(w Sender) {
+	s.mu.Lock()
+	s.WA = w
+	s.mu.Unlock()
+}
+
+func (s *Server) sender() Sender {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.WA
+}
+
+// requireWA answers 503 and returns nil while WhatsApp is not connected.
+func (s *Server) requireWA(w http.ResponseWriter) Sender {
+	wa := s.sender()
+	if wa == nil {
+		writeJSON(w, 503, map[string]string{"error": "whatsapp não conectado"})
+	}
+	return wa
 }
 
 // Touch renews the idle timer.
@@ -94,10 +123,25 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /status", func(w http.ResponseWriter, r *http.Request) {
 		s.Touch()
 		msgs, jobs, _ := s.Store.Stats()
-		writeJSON(w, 200, StatusResponse{OK: true, Connected: s.WA != nil && s.WA.IsConnected(), Messages: msgs, PendingJobs: jobs, PID: os.Getpid()})
+		wa := s.sender()
+		st := StatusResponse{OK: true, Connected: wa != nil && wa.IsConnected(), Messages: msgs, PendingJobs: jobs, PID: os.Getpid()}
+		if s.Pair != nil {
+			st.Paired = s.Pair.isPaired()
+			st.QRPNG, st.QRTxt = s.Pair.pngPath, s.Pair.txtPath
+			var at time.Time
+			st.Pairing, at = s.Pair.snapshot()
+			if !at.IsZero() {
+				st.QRUpdatedAt = at.Unix()
+			}
+		}
+		writeJSON(w, 200, st)
 	})
 	mux.HandleFunc("POST /send", func(w http.ResponseWriter, r *http.Request) {
 		s.Touch()
+		wa := s.requireWA(w)
+		if wa == nil {
+			return
+		}
 		var req struct{ Chat, Text string }
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Chat == "" || req.Text == "" {
 			writeJSON(w, 400, map[string]string{"error": "chat e text são obrigatórios"})
@@ -108,7 +152,7 @@ func (s *Server) Handler() http.Handler {
 			writeJSON(w, 400, map[string]string{"error": err.Error()})
 			return
 		}
-		id, err := s.WA.SendText(r.Context(), jid, req.Text)
+		id, err := wa.SendText(r.Context(), jid, req.Text)
 		if err != nil {
 			writeJSON(w, 502, map[string]string{"error": err.Error()})
 			return
@@ -117,6 +161,10 @@ func (s *Server) Handler() http.Handler {
 	})
 	mux.HandleFunc("POST /sync", func(w http.ResponseWriter, r *http.Request) {
 		s.Touch()
+		wa := s.requireWA(w)
+		if wa == nil {
+			return
+		}
 		var req struct {
 			Chat  string
 			Count int
@@ -138,7 +186,7 @@ func (s *Server) Handler() http.Handler {
 			sender, _ := types.ParseJID(m.SenderJID)
 			oldest = &types.MessageInfo{ID: m.ID, Timestamp: time.Unix(m.TS, 0), MessageSource: types.MessageSource{Chat: jid, Sender: sender, IsFromMe: m.FromMe, IsGroup: jid.Server == types.GroupServer}}
 		}
-		if err := s.WA.RequestHistory(r.Context(), jid, oldest, req.Count); err != nil {
+		if err := wa.RequestHistory(r.Context(), jid, oldest, req.Count); err != nil {
 			writeJSON(w, 502, map[string]string{"error": err.Error()})
 			return
 		}
@@ -157,6 +205,10 @@ type waConn struct{ *wa.Client }
 func (c waConn) IsConnected() bool { return c.WA.IsConnected() }
 
 // Run wires store, whatsmeow, ingester, worker and HTTP; blocks until ctx is done or shutdown.
+//
+// HTTP comes up before WhatsApp connects: while unpaired the daemon writes each QR
+// to cfg.QRPNGPath/QRTxtPath (and prints it via showQR in foreground) and retries
+// pairing after every timeout, so `claudewhats pair` can poll /status meanwhile.
 func Run(ctx context.Context, cfg *config.Config, background bool, showQR func(string)) error {
 	logger := log.New(os.Stderr, "", log.LstdFlags)
 	if background {
@@ -197,22 +249,16 @@ func Run(ctx context.Context, cfg *config.Config, background bool, showQR func(s
 	var stopOnce sync.Once
 	shutdown := func() { stopOnce.Do(cancel) }
 
-	ing := &Ingester{Store: st, MediaDir: cfg.MediaDir, DL: client, Log: logger, OnLoggedOutFn: shutdown}
-	if err := client.Connect(ctx, ing, showQR); err != nil {
-		if errors.Is(err, wa.ErrNotPaired) {
-			logger.Print(err)
-		}
-		st.Close()
-		return err
-	}
-	logger.Printf("conectado, pid %d, porta %d", os.Getpid(), cfg.Port)
+	pair := &pairState{pngPath: cfg.QRPNGPath, txtPath: cfg.QRTxtPath, paired: client.IsPaired()}
+	sink := &qrSink{pair: pair, show: showQR, log: logger}
+	sink.clear() // stale files from an earlier daemon
 
 	var wg sync.WaitGroup
 	worker := &Worker{Store: st, AI: gemini.New(cfg.GeminiAPIKey, cfg.GeminiModel), Log: logger}
 	wg.Add(1)
 	go func() { defer wg.Done(); worker.Run(ctx) }()
 
-	srv := &Server{Store: st, WA: waConn{client}, Log: logger, Shutdown: shutdown}
+	srv := &Server{Store: st, Pair: pair, Log: logger, Shutdown: shutdown}
 	if background {
 		srv.Idle = cfg.IdleTimeout
 	}
@@ -221,11 +267,47 @@ func Run(ctx context.Context, cfg *config.Config, background bool, showQR func(s
 	hs := &http.Server{Handler: srv.Handler()}
 	go hs.Serve(ln)
 
+	// Connect (pairing first when needed) off the main goroutine so HTTP keeps
+	// answering /status; fatal reports an error that must bring the daemon down.
+	ing := &Ingester{Store: st, MediaDir: cfg.MediaDir, DL: client, Log: logger, OnLoggedOutFn: shutdown}
+	fatal := make(chan error, 1)
+	go func() {
+		for {
+			paired := client.IsPaired()
+			if !paired {
+				logger.Print("não pareado: gravando QR em ", cfg.QRPNGPath)
+			}
+			err := client.Connect(ctx, ing, sink.onQR)
+			if err == nil {
+				break
+			}
+			if paired || ctx.Err() != nil {
+				fatal <- err
+				return
+			}
+			// pairing round ended without success (QR timeout etc.): new QR channel
+			logger.Printf("%v; gerando QR novo", err)
+			pair.setPairing(false)
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(2 * time.Second):
+			}
+		}
+		sink.clear()
+		pair.setPaired()
+		srv.SetWA(waConn{client})
+		logger.Printf("conectado, pid %d, porta %d", os.Getpid(), cfg.Port)
+	}()
+
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+	var runErr error
 	select {
 	case <-sig:
 	case <-ctx.Done():
+	case runErr = <-fatal:
+		logger.Print(runErr)
 	}
 	logger.Print("encerrando")
 
@@ -240,6 +322,7 @@ func Run(ctx context.Context, cfg *config.Config, background bool, showQR func(s
 	cancel()
 	wg.Wait()
 	client.Disconnect()
+	sink.clear()
 	st.Close()
-	return nil
+	return runErr
 }

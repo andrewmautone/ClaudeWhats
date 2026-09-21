@@ -6,11 +6,13 @@ Arquivo local do seu WhatsApp (SQLite) com transcrição de áudio/imagem via Ge
 
 1. No Claude Code: `/plugin marketplace add andrewmautone/ClaudeWhats` e `/plugin install claudewhats@claudewhats`. Isso instala a skill e coloca `claudewhats` no PATH (via os shims em `bin/`, que baixam o binário da release na primeira execução).
 2. `~/.claudewhats/config.yaml`: `gemini_api_key: ...` (ou env `GEMINI_API_KEY`).
-3. `claudewhats serve` uma vez, no seu próprio terminal, para escanear o QR (WhatsApp > Aparelhos conectados). Ctrl+C depois de "conectado".
+3. Pareie: peça ao Claude ("pareia meu WhatsApp") ou rode `claudewhats pair` — o daemon sobe em background e grava o QR em `~/.claudewhats/qr.png`; escaneie em WhatsApp > Aparelhos conectados > Conectar aparelho e rode `claudewhats pair --wait`. Alternativa: `claudewhats serve` no seu terminal imprime o QR direto (Ctrl+C depois de "conectado").
 
 O daemon sobe sozinho em background quando um comando precisa e encerra após 30 min ocioso (`idle_timeout` no config). Log em `~/.claudewhats/daemon.log`; `claudewhats stop` encerra.
 
 ## Primeiro uso
+
+Se ainda não pareou, o Claude faz isso pelo chat: roda `claudewhats pair --json`, mostra o `qr.png` para você escanear e espera com `claudewhats pair --wait --json` (até 3 min; se expirar, ele repete — o arquivo é regravado a cada QR novo). `claudewhats status` mostra `pareado: sim/não`.
 
 Depois do pareamento, peça ao Claude para ver suas conversas — a skill cuida do resto (`claudewhats chats`, `read`, `search`, `summary`, `send`, `sync`, `contact`).
 

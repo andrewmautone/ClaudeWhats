@@ -4,7 +4,6 @@ import (
 	"context"
 	"time"
 
-	"github.com/andrewmautone/claudewhats/internal/daemon"
 	"github.com/spf13/cobra"
 )
 
@@ -24,16 +23,27 @@ func init() {
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
-			st, derr := daemon.NewClient(cfg.Port).Status(ctx)
-			res := map[string]any{"messages": msgs, "pending_jobs": jobs, "daemon_running": derr == nil, "connected": st.Connected, "pid": st.PID, "home": cfg.Home}
+			st, derr := daemonClient(cfg).Status(ctx)
+			res := map[string]any{"messages": msgs, "pending_jobs": jobs, "daemon_running": derr == nil, "connected": st.Connected, "paired": st.Paired, "pairing": st.Pairing, "qr_png": st.QRPNG, "pid": st.PID, "home": cfg.Home}
 			return emit(res, func() {
 				printf("mensagens: %d  jobs pendentes: %d\n", msgs, jobs)
 				if derr != nil {
 					printf("daemon: parado\n")
-				} else {
-					printf("daemon: rodando (pid %d), whatsapp conectado: %v\n", st.PID, st.Connected)
+					return
+				}
+				printf("daemon: rodando (pid %d), whatsapp conectado: %v\n", st.PID, st.Connected)
+				printf("pareado: %s\n", simNao(st.Paired))
+				if st.Pairing {
+					printf("pareando (QR em %s)\n", st.QRPNG)
 				}
 			})
 		},
 	})
+}
+
+func simNao(b bool) string {
+	if b {
+		return "sim"
+	}
+	return "não"
 }

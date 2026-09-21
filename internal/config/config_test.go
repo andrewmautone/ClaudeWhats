@@ -21,6 +21,9 @@ func TestLoadDefaultsAndYAML(t *testing.T) {
 	if cfg.DBPath != filepath.Join(home, "data.db") {
 		t.Fatalf("dbpath %s", cfg.DBPath)
 	}
+	if cfg.QRPNGPath != filepath.Join(home, "qr.png") || cfg.QRTxtPath != filepath.Join(home, "qr.txt") {
+		t.Fatalf("qr paths %s %s", cfg.QRPNGPath, cfg.QRTxtPath)
+	}
 	os.WriteFile(filepath.Join(home, "config.yaml"), []byte("gemini_api_key: abc\nport: 8000\nidle_timeout: 5m\n"), 0o600)
 	cfg, err = Load()
 	if err != nil {

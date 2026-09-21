@@ -18,7 +18,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-var ErrNotPaired = errors.New("não pareado: rode `claudewhats serve` para escanear o QR")
+var ErrNotPaired = errors.New("não pareado: rode `claudewhats pair` (ou `claudewhats serve`) para escanear o QR")
 
 type Handler interface {
 	OnMessage(evt *events.Message)
@@ -60,7 +60,13 @@ func (c *Client) IsPaired() bool { return c.WA.Store.ID != nil }
 // client: it is reused on every subsequent reconnect to send the post-connect presence
 // update and to drive the joined-groups sync, so callers must keep it alive (and only
 // cancel it) for as long as the Client itself is in use, not just for this one call.
-func (c *Client) Connect(ctx context.Context, h Handler, showQR func(code string)) error {
+//
+// When the store has no session, onQR is called with every fresh QR code and Connect
+// blocks until pairing succeeds (nil) or the QR channel ends otherwise ("timeout"
+// after whatsmeow runs out of codes, or another terminal event) — callers may then
+// simply call Connect again to start a new pairing round. A nil onQR means the
+// caller cannot pair: ErrNotPaired.
+func (c *Client) Connect(ctx context.Context, h Handler, onQR func(code string)) error {
 	c.handlerOnce.Do(func() {
 		c.WA.AddEventHandler(func(raw any) {
 			switch evt := raw.(type) {
@@ -116,7 +122,7 @@ func (c *Client) Connect(ctx context.Context, h Handler, showQR func(code string
 		})
 	})
 	if !c.IsPaired() {
-		if showQR == nil {
+		if onQR == nil {
 			return ErrNotPaired
 		}
 		qr, err := c.WA.GetQRChannel(ctx)
@@ -127,13 +133,22 @@ func (c *Client) Connect(ctx context.Context, h Handler, showQR func(code string
 			return err
 		}
 		for item := range qr {
-			if item.Event == whatsmeow.QRChannelEventCode {
-				showQR(item.Code)
-			} else if item.Event != whatsmeow.QRChannelSuccess.Event {
+			switch item.Event {
+			case whatsmeow.QRChannelEventCode:
+				onQR(item.Code)
+			case whatsmeow.QRChannelSuccess.Event:
+				return nil
+			case whatsmeow.QRChannelEventError:
+				return fmt.Errorf("pareamento: %s: %w", item.Event, item.Error)
+			default:
 				return fmt.Errorf("pareamento: %s", item.Event)
 			}
 		}
-		return nil
+		// channel closed without a terminal event: only happens when ctx ends
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		return errors.New("pareamento: canal de QR fechado")
 	}
 	return c.WA.Connect()
 }

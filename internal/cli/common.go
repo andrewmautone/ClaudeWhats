@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -23,6 +24,8 @@ var (
 	noMemory      bool
 	storeOverride *store.Store
 	out           io.Writer = os.Stdout
+	// daemonClientOverride replaces the real daemon in tests (httptest server).
+	daemonClientOverride *daemon.Client
 )
 
 func init() {
@@ -74,6 +77,22 @@ func closeStore(s *store.Store) {
 	if s != storeOverride {
 		s.Close()
 	}
+}
+
+// daemonClient returns a client for the configured port without spawning.
+func daemonClient(cfg *config.Config) *daemon.Client {
+	if daemonClientOverride != nil {
+		return daemonClientOverride
+	}
+	return daemon.NewClient(cfg.Port)
+}
+
+// ensureDaemon is daemon.EnsureRunning, honouring the test override.
+func ensureDaemon(ctx context.Context, cfg *config.Config, wait time.Duration) (*daemon.Client, error) {
+	if daemonClientOverride != nil {
+		return daemonClientOverride, nil
+	}
+	return daemon.EnsureRunning(ctx, cfg, wait)
 }
 
 func kick(cfg *config.Config) {
