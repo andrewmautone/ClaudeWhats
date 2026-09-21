@@ -12,7 +12,7 @@ O daemon sobe sozinho em background quando um comando precisa e encerra após 30
 
 ## Primeiro uso
 
-Se ainda não pareou, o Claude faz isso pelo chat: roda `claudewhats pair --json`, mostra o `qr.png` para você escanear e espera com `claudewhats pair --wait --json` (até 3 min; se expirar, ele repete — o arquivo é regravado a cada QR novo). `claudewhats status` mostra `pareado: sim/não`.
+Se ainda não pareou, o Claude faz isso pelo chat: roda `claudewhats pair --json`, mostra o QR para você escanear e espera com `claudewhats pair --wait --json` (até 3 min). Cada QR expira em ~20-60 s — deixe a câmera pronta; quando um novo é gerado o Claude mostra o novo arquivo (`qr-<ts>.png`). `claudewhats status` mostra `pareado: sim/não`.
 
 Depois do pareamento, peça ao Claude para ver suas conversas — a skill cuida do resto (`claudewhats chats`, `read`, `search`, `summary`, `send`, `sync`, `contact`).
 

@@ -127,7 +127,7 @@ func (s *Server) Handler() http.Handler {
 		st := StatusResponse{OK: true, Connected: wa != nil && wa.IsConnected(), Messages: msgs, PendingJobs: jobs, PID: os.Getpid()}
 		if s.Pair != nil {
 			st.Paired = s.Pair.isPaired()
-			st.QRPNG, st.QRTxt = s.Pair.pngPath, s.Pair.txtPath
+			st.QRPNG, st.QRTxt = s.Pair.png(), s.Pair.txtPath
 			var at time.Time
 			st.Pairing, at = s.Pair.snapshot()
 			if !at.IsZero() {

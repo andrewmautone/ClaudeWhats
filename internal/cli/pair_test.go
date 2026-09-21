@@ -64,16 +64,37 @@ func TestPairAlreadyPaired(t *testing.T) {
 
 func TestPairWaitUntilPaired(t *testing.T) {
 	s := testStore(t)
-	pairing := daemon.StatusResponse{OK: true, Pairing: true, QRUpdatedAt: 1700000000, QRPNG: "/h/qr.png", QRTxt: "/h/qr.txt"}
-	calls := fakeDaemon(t, pairing, daemon.StatusResponse{OK: true, Paired: true})
+	pairing := daemon.StatusResponse{OK: true, Pairing: true, QRUpdatedAt: 1700000000, QRPNG: "/h/qr-1700000000.png", QRTxt: "/h/qr.txt"}
+	refreshed := daemon.StatusResponse{OK: true, Pairing: true, QRUpdatedAt: 1700000020, QRPNG: "/h/qr-1700000020.png", QRTxt: "/h/qr.txt"}
+	paired := daemon.StatusResponse{OK: true, Paired: true}
+	calls := fakeDaemon(t, pairing, refreshed, refreshed, paired)
 	out := run(t, s, "pair", "--wait")
-	if !strings.Contains(out, "QR em: /h/qr.png") || !strings.HasSuffix(strings.TrimSpace(out), "pareado") || atomic.LoadInt32(calls) < 2 {
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if !strings.Contains(out, "QR em: /h/qr-1700000000.png") || lines[len(lines)-1] != "pareado" || atomic.LoadInt32(calls) < 4 {
 		t.Fatalf("%d %s", *calls, out)
 	}
-	fakeDaemon(t, pairing, daemon.StatusResponse{OK: true, Paired: true})
-	out = run(t, s, "pair", "--wait", "--json")
-	if !strings.Contains(out, `"paired": true`) {
+	// one "QR novo" per change of qr_updated_at, not per poll
+	if strings.Count(out, "QR novo: /h/qr-1700000020.png") != 1 {
 		t.Fatal(out)
+	}
+
+	fakeDaemon(t, pairing, refreshed, refreshed, paired)
+	out = run(t, s, "pair", "--wait", "--json")
+	lines = strings.Split(strings.TrimSpace(out), "\n")
+	if len(lines) != 3 {
+		t.Fatalf("expected 2 qr events + final, got %d: %s", len(lines), out)
+	}
+	for i, want := range []string{"/h/qr-1700000000.png", "/h/qr-1700000020.png"} {
+		var ev struct {
+			Event string `json:"event"`
+			QRPNG string `json:"qr_png"`
+		}
+		if err := json.Unmarshal([]byte(lines[i]), &ev); err != nil || ev.Event != "qr" || ev.QRPNG != want {
+			t.Fatalf("line %d: %v %s", i, err, lines[i])
+		}
+	}
+	if lines[2] != `{"paired":true}` {
+		t.Fatal(lines[2])
 	}
 }
 

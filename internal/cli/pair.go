@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -51,22 +52,52 @@ Com --wait, bloqueia até o WhatsApp confirmar o pareamento ou --timeout.`,
 					printf("Depois rode: claudewhats pair --wait\n")
 				})
 			}
-			if !jsonOut {
-				showQR()
+			// --wait: report every fresh QR (the previous one expired) so the caller
+			// can show the new file, then the final verdict. JSON mode is one object
+			// per line so a reader can act on each event as it arrives.
+			announce := func(st daemon.StatusResponse, first bool) {
+				if jsonOut {
+					printJSONLine(map[string]any{"event": "qr", "qr_png": st.QRPNG, "qr_txt": st.QRTxt, "qr_updated_at": st.QRUpdatedAt})
+				} else if first {
+					showQR()
+				} else {
+					printf("QR novo: %s\n", st.QRPNG)
+				}
 			}
-			_, ok, err = pollStatus(ctx, c, timeout, func(st daemon.StatusResponse) bool { return st.Paired })
+			announce(st, true)
+			last := st.QRUpdatedAt
+			_, ok, err = pollStatus(ctx, c, timeout, func(st daemon.StatusResponse) bool {
+				if st.Paired {
+					return true
+				}
+				if st.QRUpdatedAt != last {
+					last = st.QRUpdatedAt
+					announce(st, false)
+				}
+				return false
+			})
 			if err != nil {
 				return err
 			}
 			if !ok {
 				return errors.New("tempo esgotado; rode pair de novo")
 			}
-			return emit(map[string]any{"paired": true}, func() { printf("pareado\n") })
+			if jsonOut {
+				printJSONLine(map[string]any{"paired": true})
+				return nil
+			}
+			printf("pareado\n")
+			return nil
 		},
 	}
 	cmd.Flags().BoolVar(&wait, "wait", false, "espera o WhatsApp confirmar o pareamento")
 	cmd.Flags().DurationVar(&timeout, "timeout", 3*time.Minute, "tempo máximo do --wait")
 	root.AddCommand(cmd)
+}
+
+func printJSONLine(v any) {
+	b, _ := json.Marshal(v)
+	printf("%s\n", b)
 }
 
 func pairJSON(st daemon.StatusResponse) map[string]any {

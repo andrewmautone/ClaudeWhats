@@ -46,7 +46,7 @@ func TestStatusWhilePairing(t *testing.T) {
 	defer s.Close()
 	pair := &pairState{pngPath: "/x/qr.png", txtPath: "/x/qr.txt"}
 	pair.setPairing(true)
-	pair.touch(time.Unix(1700000000, 0))
+	pair.touch(time.Unix(1700000000, 0), "/x/qr-1700000000.png")
 	srv := &Server{Store: s, Pair: pair, Shutdown: func() {}}
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
@@ -54,7 +54,7 @@ func TestStatusWhilePairing(t *testing.T) {
 	var st StatusResponse
 	r, _ := http.Get(ts.URL + "/status")
 	json.NewDecoder(r.Body).Decode(&st)
-	if !st.Pairing || st.Paired || st.QRUpdatedAt != 1700000000 || st.QRPNG != "/x/qr.png" || st.QRTxt != "/x/qr.txt" {
+	if !st.Pairing || st.Paired || st.QRUpdatedAt != 1700000000 || st.QRPNG != "/x/qr-1700000000.png" || st.QRTxt != "/x/qr.txt" {
 		t.Fatalf("%+v", st)
 	}
 	pair.setPaired()
@@ -87,13 +87,31 @@ func TestQRSinkWritesFilesAtomically(t *testing.T) {
 	if err != nil || len(txt) == 0 {
 		t.Fatalf("txt: %v %d", err, len(txt))
 	}
-	entries, _ := os.ReadDir(dir)
-	if len(entries) != 2 {
-		t.Fatalf("temp files left behind: %v", entries)
+	// a stale timestamped file from an earlier code must be pruned
+	old := filepath.Join(dir, "qr-1.png")
+	os.WriteFile(old, []byte("x"), 0o600)
+	sink.onQR("2@second")
+	if _, err := os.Stat(old); !os.IsNotExist(err) {
+		t.Fatal("old qr-*.png not removed")
 	}
 	pairing, updated := pair.snapshot()
 	if !pairing || updated.Before(before) {
 		t.Fatalf("state %v %v", pairing, updated)
+	}
+	unique := pair.png()
+	if unique == pair.pngPath || filepath.Dir(unique) != dir || !strings.HasPrefix(filepath.Base(unique), "qr-") {
+		t.Fatalf("unique png %q", unique)
+	}
+	ub, err := os.ReadFile(unique)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sb, _ := os.ReadFile(pair.pngPath); !bytes.Equal(ub, sb) {
+		t.Fatal("unique png differs from qr.png")
+	}
+	entries, _ := os.ReadDir(dir)
+	if len(entries) != 3 {
+		t.Fatalf("expected qr.png, qr.txt and one qr-*.png: %v", entries)
 	}
 
 	sink.clear()
@@ -103,8 +121,11 @@ func TestQRSinkWritesFilesAtomically(t *testing.T) {
 	if _, err := os.Stat(pair.txtPath); !os.IsNotExist(err) {
 		t.Fatal("txt not removed")
 	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+		t.Fatalf("clear left files: %v", entries)
+	}
 	pairing, updated = pair.snapshot()
-	if pairing || !updated.IsZero() {
-		t.Fatalf("state after clear %v %v", pairing, updated)
+	if pairing || !updated.IsZero() || pair.png() != pair.pngPath {
+		t.Fatalf("state after clear %v %v %s", pairing, updated, pair.png())
 	}
 }

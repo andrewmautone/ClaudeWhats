@@ -13,10 +13,10 @@ O comando `claudewhats` vem do `bin/` deste plugin e baixa o binário da release
 
 Pareamento (primeira vez, ou depois de um logout): se `claudewhats status --json` mostrar `paired: false` (ou qualquer comando falhar por "não pareado"):
 
-1. Rode `claudewhats pair --json` — o daemon sobe em background e grava o QR em `qr_png` (e ASCII em `qr_txt`).
-2. Use a ferramenta Read no caminho `qr_png` para mostrar o QR ao usuário e peça para escanear em WhatsApp > Aparelhos conectados > Conectar aparelho.
-3. Rode `claudewhats pair --wait --json` (bloqueia até 3 min; `{"paired": true}` ao terminar).
-4. Se expirar ("tempo esgotado"), repita do passo 1: o arquivo é regravado a cada QR novo.
+1. Avise o usuário que cada QR expira em ~20-60 s: ele deve abrir WhatsApp > Aparelhos conectados > Conectar aparelho e estar com a câmera pronta ANTES de você mostrar o QR. Só então rode `claudewhats pair --json` — o daemon sobe em background e grava o QR em `qr_png` (arquivo com nome único, `qr-<ts>.png`; ASCII em `qr_txt`).
+2. Use a ferramenta Read no caminho `qr_png` para mostrar o QR ao usuário e peça para escanear.
+3. Rode `claudewhats pair --wait --json` (bloqueia até 3 min). A saída é um JSON por linha: cada `{"event":"qr","qr_png":...}` é um QR novo (o anterior expirou) — faça Read no novo `qr_png` e mostre de novo ao usuário; termina com `{"paired":true}`.
+4. Se expirar ("tempo esgotado"), repita do passo 1.
 
 Alternativa no terminal do usuário: `claudewhats serve` (foreground) imprime o QR direto no terminal.
 
@@ -30,7 +30,7 @@ Alternativa no terminal do usuário: `claudewhats serve` (foreground) imprime o 
 - `claudewhats sync "<chat>" [--count 50]` — pede histórico antigo ao celular; espere ~10s e rode `read` de novo.
 - `claudewhats send "<chat>" "<texto>" --yes` — envia texto. **Só com pedido explícito do usuário, e confirme o chat e o texto com ele antes de usar `--yes`.**
 - `claudewhats contact add "<nome>" "<numero>"` / `contact list [--q filter] --json` / `contact link <a> <b>` / `contact rename <ref> <nome>`.
-- `claudewhats pair [--wait] [--timeout 3m] --json` — pareia via arquivo QR: `{paired, pairing, qr_png, qr_txt, qr_updated_at}`; com `--wait` espera o WhatsApp confirmar (`{"paired": true}`).
+- `claudewhats pair [--wait] [--timeout 3m] --json` — pareia via arquivo QR: `{paired, pairing, qr_png, qr_txt, qr_updated_at}`; com `--wait` imprime um JSON por linha (`{"event":"qr","qr_png":...}` a cada QR novo) e termina com `{"paired":true}`.
 - `claudewhats serve [--background] [--idle 30m]` — inicia o daemon (background mode com log e idle timeout; foreground imprime o QR no terminal).
 - `claudewhats stop` — encerra o daemon em background.
 
@@ -49,7 +49,7 @@ Cada comando de memória imprime exatamente o que a ferramenta manda (inclusive 
 
 1. Antes de qualquer leitura, rode `claudewhats memory wake` e faça o que ele imprimir até o fim (inclusive `wake 2 N` e os `nap` pedidos). Quando aprender algo com efeito duradouro sobre uma pessoa, grupo ou assunto — decisão, combinado, preferência, fato — registre `claudewhats memory note "<1 linha, ≤280 bytes, cite o nome da pessoa/grupo>"`. Se `note` pedir compressão, faça antes da próxima ação. Não registre o que já está na memória.
 2. Leitura primeiro: `chats` → `read`/`search`/`summary`. Nunca peça ao usuário para abrir terminal do daemon; ele sobe sozinho em background.
-3. Se `status --json` mostrar `paired: false` ou um comando errar com "não pareado", siga o fluxo de pareamento do Setup: `pair --json` → Read no `qr_png` → usuário escaneia → `pair --wait --json`. Repita se expirar.
+3. Se `status --json` mostrar `paired: false` ou um comando errar com "não pareado", siga o fluxo de pareamento do Setup: usuário com a câmera pronta → `pair --json` → Read no `qr_png` → `pair --wait --json` (Read no novo `qr_png` a cada `event: qr`). Repita se expirar.
 4. `contact link` só quando o usuário pedir explicitamente para juntar duas identidades (ex.: "o 55...@lid do grupo é a Maria").
 5. Se `transcript_status` vier `pending` em muitas mensagens, avise que a transcrição ainda está rodando e ofereça tentar de novo.
 6. Ambiguidade no `<chat>` volta erro listando candidatos: pergunte ao usuário qual.
