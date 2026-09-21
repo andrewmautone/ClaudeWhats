@@ -145,3 +145,49 @@ func TestResolveChatByPushName(t *testing.T) {
 		t.Fatalf("%+v %v", c, err)
 	}
 }
+
+func TestResolveChatRanking(t *testing.T) {
+	s := mustMem(t)
+	for jid, name := range map[string]string{
+		"1@s.whatsapp.net": "Amor☀️💛",
+		"2@s.whatsapp.net": "zamora",
+		"3@s.whatsapp.net": "Otavio Silva - VW Zamora",
+		"4@s.whatsapp.net": "Maria",
+	} {
+		s.AddContact(name, jid)
+		s.UpsertChat(jid, "dm", "")
+	}
+	cases := map[string]string{"amor": "1@s.whatsapp.net", "vw": "3@s.whatsapp.net", "ria": "4@s.whatsapp.net", "AMOR": "1@s.whatsapp.net"}
+	for ref, want := range cases {
+		c, err := s.ResolveChat(ref)
+		if err != nil || c.JID != want {
+			t.Fatalf("%s: %+v %v", ref, c, err)
+		}
+	}
+	_, err := s.ResolveChat("zam")
+	if err == nil || !strings.Contains(err.Error(), "zamora") || !strings.Contains(err.Error(), "VW Zamora") || strings.Contains(err.Error(), "Amor") {
+		t.Fatalf("expected ambiguity between the two Zamoras, got %v", err)
+	}
+}
+
+func TestFindContactRanking(t *testing.T) {
+	s := mustMem(t)
+	ids := map[string]int64{}
+	for jid, name := range map[string]string{
+		"1@s.whatsapp.net": "Amor☀️💛",
+		"2@s.whatsapp.net": "zamora",
+		"3@s.whatsapp.net": "Otavio Silva - VW Zamora",
+		"4@s.whatsapp.net": "Maria",
+	} {
+		ids[name], _ = s.AddContact(name, jid)
+	}
+	for ref, want := range map[string]string{"amor": "Amor☀️💛", "vw": "Otavio Silva - VW Zamora", "ria": "Maria"} {
+		id, err := s.findContact(ref)
+		if err != nil || id != ids[want] {
+			t.Fatalf("%s: %d %v", ref, id, err)
+		}
+	}
+	if _, err := s.findContact("zam"); err == nil || !strings.Contains(err.Error(), "ambíguo") {
+		t.Fatalf("expected ambiguity, got %v", err)
+	}
+}

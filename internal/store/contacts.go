@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 )
 
 type Contact struct {
@@ -38,6 +39,77 @@ func digits(s string) string {
 		}
 	}
 	return b.String()
+}
+
+// Match tiers for name lookups, best first: the query equals the name once
+// emoji, punctuation and spaces are stripped; a word of the name starts with
+// the query (the first word included); the query is a plain substring.
+const (
+	matchNone = iota
+	matchSubstring
+	matchWordPrefix
+	matchExact
+)
+
+// alnum lowercases s and keeps only letters and digits, so "Amor☀️💛" and
+// "amor" compare equal.
+func alnum(s string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(s) {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+// matchTier ranks how well name answers the query q.
+func matchTier(name, q string) int {
+	lq := strings.ToLower(strings.TrimSpace(q))
+	ln := strings.ToLower(name)
+	if lq == "" || ln == "" {
+		return matchNone
+	}
+	if aq := alnum(q); aq != "" && aq == alnum(name) {
+		return matchExact
+	}
+	for _, w := range strings.FieldsFunc(ln, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) }) {
+		if strings.HasPrefix(w, lq) {
+			return matchWordPrefix
+		}
+	}
+	if strings.Contains(ln, lq) {
+		return matchSubstring
+	}
+	return matchNone
+}
+
+// bestMatches keeps the indexes of the candidates in the top tier, where each
+// candidate's tier is the best of its names[i] (a chat may match by chat name,
+// contact name or push name). Candidates with no match at all are dropped.
+func bestMatches(q string, names [][]string) []int {
+	best := matchNone
+	tiers := make([]int, len(names))
+	for i, ns := range names {
+		for _, n := range ns {
+			if t := matchTier(n, q); t > tiers[i] {
+				tiers[i] = t
+			}
+		}
+		if tiers[i] > best {
+			best = tiers[i]
+		}
+	}
+	if best == matchNone {
+		return nil
+	}
+	var out []int
+	for i, t := range tiers {
+		if t == best {
+			out = append(out, i)
+		}
+	}
+	return out
 }
 
 // execer is what *sql.DB and *sql.Tx have in common; the identity helpers take
@@ -184,6 +256,26 @@ func (s *Store) PNForLID(lid string) (string, bool) {
 	return pn, err == nil && pn != ""
 }
 
+// UnlinkedLIDs lists the LID jids whose contact has no phone-number identity.
+func (s *Store) UnlinkedLIDs() ([]string, error) {
+	rows, err := s.db.Query(`SELECT l.jid FROM identities l WHERE l.kind='lid'
+		AND NOT EXISTS (SELECT 1 FROM identities pn WHERE pn.contact_id=l.contact_id AND pn.kind='pn')
+		ORDER BY l.jid`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var j string
+		if err := rows.Scan(&j); err != nil {
+			return nil, err
+		}
+		out = append(out, j)
+	}
+	return out, rows.Err()
+}
+
 // SetContactNameIfAuto sets the address-book name on jid's contact unless the
 // user has named it manually (auto=0). Unknown jids get an auto contact first.
 func (s *Store) SetContactNameIfAuto(jid, name string) error {
@@ -238,7 +330,9 @@ func (s *Store) AddContact(name, number string) (int64, error) {
 	return id, tx.Commit()
 }
 
-// findContact resolves a jid, phone number or (case-insensitive substring) name to a contact id.
+// findContact resolves a jid, phone number or name to a contact id. Names match
+// case-insensitively; the best tier wins (see matchTier) and a lookup is only
+// ambiguous when two contacts tie in that tier.
 func (s *Store) findContact(ref string) (int64, error) {
 	if strings.Contains(ref, "@") {
 		id, err := contactOf(s.db, ref)
@@ -253,13 +347,13 @@ func (s *Store) findContact(ref string) (int64, error) {
 	if d := digits(ref); d != "" && d == strings.TrimPrefix(ref, "+") {
 		return s.findContact(d + "@s.whatsapp.net")
 	}
-	rows, err := s.db.Query(`SELECT id, name FROM contacts WHERE lower(name) LIKE '%'||lower(?)||'%' ORDER BY (lower(name)=lower(?)) DESC, id LIMIT 5`, ref, ref)
+	rows, err := s.db.Query(`SELECT id, name FROM contacts WHERE lower(name) LIKE '%'||lower(?)||'%' ORDER BY id LIMIT 50`, ref)
 	if err != nil {
 		return 0, err
 	}
 	defer rows.Close()
 	var ids []int64
-	var names []string
+	var names [][]string
 	for rows.Next() {
 		var id int64
 		var n string
@@ -267,18 +361,23 @@ func (s *Store) findContact(ref string) (int64, error) {
 			return 0, err
 		}
 		ids = append(ids, id)
-		names = append(names, n)
+		names = append(names, []string{n})
 	}
 	if err := rows.Err(); err != nil {
 		return 0, err
 	}
-	switch {
-	case len(ids) == 0:
+	best := bestMatches(ref, names)
+	if len(best) == 0 {
 		return 0, fmt.Errorf("contato não encontrado: %s", ref)
-	case len(ids) > 1 && !strings.EqualFold(names[0], ref):
-		return 0, fmt.Errorf("ambíguo %q: %s", ref, strings.Join(names, ", "))
 	}
-	return ids[0], nil
+	if len(best) > 1 {
+		var ns []string
+		for _, i := range best {
+			ns = append(ns, names[i][0])
+		}
+		return 0, fmt.Errorf("ambíguo %q: %s", ref, strings.Join(ns, ", "))
+	}
+	return ids[best[0]], nil
 }
 
 func (s *Store) LinkContacts(a, b string) (int64, error) {

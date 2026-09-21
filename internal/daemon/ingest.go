@@ -21,12 +21,21 @@ type Downloader interface {
 	Download(ctx context.Context, m whatsmeow.DownloadableMessage) ([]byte, error)
 }
 
+// LIDResolver is the slice of whatsmeow's store.LIDStore the ingester needs:
+// the LID -> phone-number mapping WhatsApp keeps on the server side.
+type LIDResolver interface {
+	GetPNForLID(ctx context.Context, lid types.JID) (types.JID, error)
+}
+
 type Ingester struct {
 	Store         *store.Store
 	MediaDir      string
 	DL            Downloader
 	Log           *log.Logger
 	OnLoggedOutFn func()
+	// LIDs resolves LID jids to phone numbers when the event carries no alt
+	// (history sync, group members, app-state contacts). nil disables it.
+	LIDs LIDResolver
 }
 
 func (in *Ingester) logf(format string, a ...any) {
@@ -40,6 +49,33 @@ func jidStr(j types.JID) string {
 		return ""
 	}
 	return j.ToNonAD().String()
+}
+
+// pnFor returns the phone-number jid for a LID via whatsmeow's mapping store;
+// empty for non-LIDs, when no resolver is set, or when the mapping is unknown.
+func (in *Ingester) pnFor(j types.JID) types.JID {
+	if in.LIDs == nil || j.Server != types.HiddenUserServer {
+		return types.EmptyJID
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	pn, err := in.LIDs.GetPNForLID(ctx, j)
+	if err != nil {
+		in.logf("lid %s: %v", j, err)
+		return types.EmptyJID
+	}
+	if pn.IsEmpty() || pn.Server != types.DefaultUserServer {
+		return types.EmptyJID
+	}
+	return pn.ToNonAD()
+}
+
+// altOr is alt when the event carries one, else the mapped PN of j.
+func (in *Ingester) altOr(j, alt types.JID) types.JID {
+	if !alt.IsEmpty() {
+		return alt
+	}
+	return in.pnFor(j)
 }
 
 func (in *Ingester) OnMessage(evt *events.Message) {
@@ -61,11 +97,11 @@ func (in *Ingester) OnMessage(evt *events.Message) {
 	if info.IsFromMe {
 		pushName = ""
 	}
-	if _, err := in.Store.ResolveIdentity(sender, jidStr(info.SenderAlt), pushName); err != nil {
+	if _, err := in.Store.ResolveIdentity(sender, jidStr(in.altOr(info.Sender, info.SenderAlt)), pushName); err != nil {
 		in.logf("resolve sender: %v", err)
 	}
 	if kind == "dm" && chat != sender {
-		if _, err := in.Store.ResolveIdentity(chat, jidStr(info.RecipientAlt), ""); err != nil {
+		if _, err := in.Store.ResolveIdentity(chat, jidStr(in.altOr(info.Chat, info.RecipientAlt)), ""); err != nil {
 			in.logf("resolve chat identity: %v", err)
 		}
 	}
@@ -111,7 +147,8 @@ func (in *Ingester) OnMessage(evt *events.Message) {
 // canonicalDM keys a LID-addressed DM by the contact's phone-number jid, so the
 // same conversation never splits across an @lid and an @s.whatsapp.net chat.
 // whatsmeow carries the PN in RecipientAlt (from-me) / SenderAlt (incoming);
-// failing that, fall back to a PN already bound to the LID's contact.
+// failing that, fall back to a PN already bound to the LID's contact (which
+// the ResolveIdentity calls above just fed from whatsmeow's LID store).
 func (in *Ingester) canonicalDM(info types.MessageInfo) string {
 	alt := info.SenderAlt
 	if info.IsFromMe {
@@ -178,7 +215,7 @@ func (in *Ingester) OnGroup(jid types.JID, name string, members []types.JID) {
 		js := make([]string, 0, len(members))
 		for _, m := range members {
 			js = append(js, jidStr(m))
-			if _, err := in.Store.ResolveIdentity(jidStr(m), "", ""); err != nil {
+			if _, err := in.Store.ResolveIdentity(jidStr(m), jidStr(in.pnFor(m)), ""); err != nil {
 				in.logf("resolve member %s: %v", jidStr(m), err)
 			}
 		}
@@ -189,13 +226,26 @@ func (in *Ingester) OnGroup(jid types.JID, name string, members []types.JID) {
 }
 
 func (in *Ingester) OnPushName(jid types.JID, name string) {
-	if _, err := in.Store.ResolveIdentity(jidStr(jid), "", name); err != nil {
+	if _, err := in.Store.ResolveIdentity(jidStr(jid), jidStr(in.pnFor(jid)), name); err != nil {
 		in.logf("pushname: %v", err)
+	}
+}
+
+// linkLID binds a LID jid to its phone number (when whatsmeow knows it) so a
+// name applied to either side lands on the one shared contact.
+func (in *Ingester) linkLID(jid types.JID) {
+	pn := in.pnFor(jid)
+	if pn.IsEmpty() {
+		return
+	}
+	if _, err := in.Store.ResolveIdentity(jidStr(jid), jidStr(pn), ""); err != nil {
+		in.logf("link lid %s: %v", jidStr(jid), err)
 	}
 }
 
 // OnContact applies an address-book name; a name the user set by hand wins.
 func (in *Ingester) OnContact(jid types.JID, fullName string) {
+	in.linkLID(jid)
 	if err := in.Store.SetContactNameIfAuto(jidStr(jid), fullName); err != nil {
 		in.logf("contact %s: %v", jidStr(jid), err)
 	}
@@ -212,12 +262,53 @@ func (in *Ingester) OnChatName(jid types.JID, name string) {
 		}
 		return
 	}
+	in.linkLID(jid)
 	if err := in.Store.SetContactNameIfAuto(chat, name); err != nil {
 		in.logf("chat name %s: %v", chat, err)
 	}
 	if err := in.Store.SetPushNameIfEmpty(chat, name); err != nil {
 		in.logf("chat name %s: %v", chat, err)
 	}
+}
+
+// OnConnected runs once the post-connect group/contact sync is done: identities
+// that arrived as bare LIDs get their phone number from whatsmeow's store.
+func (in *Ingester) OnConnected() {
+	in.BackfillLIDs(context.Background())
+}
+
+// BackfillLIDs links every LID identity that has no phone-number sibling to the
+// PN whatsmeow knows for it, merging contacts as needed. Returns linked/total.
+func (in *Ingester) BackfillLIDs(ctx context.Context) (linked, total int) {
+	if in.LIDs == nil {
+		return 0, 0
+	}
+	lids, err := in.Store.UnlinkedLIDs()
+	if err != nil {
+		in.logf("lid backfill: %v", err)
+		return 0, 0
+	}
+	total = len(lids)
+	for _, l := range lids {
+		if ctx.Err() != nil {
+			break
+		}
+		j, err := types.ParseJID(l)
+		if err != nil {
+			continue
+		}
+		pn := in.pnFor(j)
+		if pn.IsEmpty() {
+			continue
+		}
+		if _, err := in.Store.ResolveIdentity(l, jidStr(pn), ""); err != nil {
+			in.logf("lid backfill %s: %v", l, err)
+			continue
+		}
+		linked++
+	}
+	in.logf("lid backfill: %d/%d vinculados", linked, total)
+	return linked, total
 }
 
 func (in *Ingester) OnLoggedOut() {

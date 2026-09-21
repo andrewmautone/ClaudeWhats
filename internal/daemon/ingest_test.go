@@ -250,3 +250,84 @@ func TestOnContactNameResolvesDMChat(t *testing.T) {
 		t.Fatalf("resolved chat should carry the contact name, got %q", c.Name)
 	}
 }
+
+type fakeLIDs map[string]string
+
+func (f fakeLIDs) GetPNForLID(ctx context.Context, lid types.JID) (types.JID, error) {
+	pn, ok := f[lid.ToNonAD().String()]
+	if !ok {
+		return types.EmptyJID, nil
+	}
+	return types.ParseJID(pn)
+}
+
+func TestIngestLIDResolvedFromStore(t *testing.T) {
+	in, s := newIngester(t, fakeDL{})
+	in.LIDs = fakeLIDs{"555@lid": "5511777@s.whatsapp.net"}
+	// group sender with no alt: whatsmeow's store supplies the PN
+	in.OnMessage(evt("123@g.us", "555@lid", "", "G1", true, &waE2E.Message{Conversation: proto.String("oi")}))
+	if s.ContactName("5511777@s.whatsapp.net") != "Fulano" || s.ContactName("555@lid") != "Fulano" {
+		t.Fatal("lid and pn should share one contact")
+	}
+	// DM keyed by LID with no alt: lands in the PN chat
+	in.OnMessage(evt("555@lid", "555@lid", "", "D1", false, &waE2E.Message{Conversation: proto.String("dm")}))
+	ms, _ := s.ReadMessages("5511777@s.whatsapp.net", 0, 10)
+	if len(ms) != 1 || ms[0].ID != "D1" {
+		t.Fatalf("dm should land in pn chat: %+v", ms)
+	}
+	if ms, _ := s.ReadMessages("555@lid", 0, 10); len(ms) != 0 {
+		t.Fatalf("no lid chat expected: %+v", ms)
+	}
+	// unknown LID stays unlinked, no error
+	in.OnMessage(evt("123@g.us", "666@lid", "", "G2", true, &waE2E.Message{Conversation: proto.String("x")}))
+	if _, ok := s.PNForLID("666@lid"); ok {
+		t.Fatal("unmapped lid must not be linked")
+	}
+}
+
+func TestBackfillLIDs(t *testing.T) {
+	in, s := newIngester(t, fakeDL{})
+	// pre-existing bare LIDs (no resolver at ingest time)
+	in.OnGroup(mustJID("123@g.us"), "Crew", []types.JID{mustJID("555@lid"), mustJID("666@lid")})
+	s.AddContact("Zé", "5511777")
+	s.SetContactNameIfAuto("666@lid", "Pushy")
+	in.LIDs = fakeLIDs{"555@lid": "5511777@s.whatsapp.net", "666@lid": "5511888@s.whatsapp.net"}
+	linked, total := in.BackfillLIDs(context.Background())
+	if linked != 2 || total != 2 {
+		t.Fatalf("linked=%d total=%d", linked, total)
+	}
+	if s.ContactName("555@lid") != "Zé" {
+		t.Fatalf("lid should take the manual contact's name, got %q", s.ContactName("555@lid"))
+	}
+	if s.ContactName("5511888@s.whatsapp.net") != "Pushy" {
+		t.Fatalf("pn should inherit the lid contact's name, got %q", s.ContactName("5511888@s.whatsapp.net"))
+	}
+	if lids, _ := s.UnlinkedLIDs(); len(lids) != 0 {
+		t.Fatalf("still unlinked: %v", lids)
+	}
+	// second run: nothing left to do
+	if linked, total := in.BackfillLIDs(context.Background()); linked != 0 || total != 0 {
+		t.Fatalf("second run linked=%d total=%d", linked, total)
+	}
+}
+
+func TestOnContactLIDAppliesToPN(t *testing.T) {
+	in, s := newIngester(t, fakeDL{})
+	in.LIDs = fakeLIDs{"555@lid": "5511777@s.whatsapp.net"}
+	in.OnContact(mustJID("555@lid"), "Dona Maria")
+	if s.ContactName("5511777@s.whatsapp.net") != "Dona Maria" {
+		t.Fatalf("got %q", s.ContactName("5511777@s.whatsapp.net"))
+	}
+	in.OnChatName(mustJID("777@lid"), "Seu João")
+	if s.ContactName("777@lid") != "Seu João" {
+		t.Fatalf("unmapped lid keeps its own name, got %q", s.ContactName("777@lid"))
+	}
+}
+
+func mustJID(s string) types.JID {
+	j, err := types.ParseJID(s)
+	if err != nil {
+		panic(err)
+	}
+	return j
+}

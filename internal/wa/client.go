@@ -30,6 +30,8 @@ type Handler interface {
 	// OnChatName carries the name history sync attaches to a conversation
 	// (group subject or address-book name of a DM).
 	OnChatName(jid types.JID, name string)
+	// OnConnected fires after each connection's group/contact sync has run.
+	OnConnected()
 	OnLoggedOut()
 }
 
@@ -122,6 +124,7 @@ func (c *Client) Connect(ctx context.Context, h Handler, onQR func(code string))
 				go func() {
 					c.syncGroups(ctx, h)
 					c.syncContacts(ctx)
+					h.OnConnected()
 				}()
 			case *events.AppStateSyncComplete:
 				// right after pairing the push name is empty and SendPresence fails;

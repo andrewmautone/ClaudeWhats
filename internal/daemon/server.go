@@ -270,7 +270,7 @@ func Run(ctx context.Context, cfg *config.Config, background bool, showQR func(s
 
 	// Connect (pairing first when needed) off the main goroutine so HTTP keeps
 	// answering /status; fatal reports an error that must bring the daemon down.
-	ing := &Ingester{Store: st, MediaDir: cfg.MediaDir, DL: client, Log: logger, OnLoggedOutFn: shutdown}
+	ing := &Ingester{Store: st, MediaDir: cfg.MediaDir, DL: client, Log: logger, OnLoggedOutFn: shutdown, LIDs: client.WA.Store.LIDs}
 	fatal := make(chan error, 1)
 	go func() {
 		for {

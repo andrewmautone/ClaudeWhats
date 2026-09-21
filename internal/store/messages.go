@@ -226,61 +226,58 @@ func (s *Store) ResolveChat(ref string) (Chat, error) {
 		}
 	}
 
-	// Try substring match on name and contact names
+	// Substring match on chat name, contact name and push name; the best tier
+	// (see matchTier) wins and only a tie inside it is ambiguous.
 	rows, err := s.db.Query(`SELECT c.jid, c.kind, c.name, c.last_msg_at,
-		(SELECT con.name FROM contacts con JOIN identities i ON i.contact_id=con.id WHERE i.jid=c.jid LIMIT 1)
+		(SELECT con.name FROM contacts con JOIN identities i ON i.contact_id=con.id WHERE i.jid=c.jid LIMIT 1),
+		(SELECT i.push_name FROM identities i WHERE i.jid=c.jid)
 		FROM chats c
 		WHERE lower(c.name) LIKE '%'||lower(?)||'%'
 		   OR CAST((SELECT lower(con.name) FROM contacts con JOIN identities i ON i.contact_id=con.id WHERE i.jid=c.jid LIMIT 1) AS TEXT) LIKE '%'||lower(?)||'%'
 		   OR EXISTS (SELECT 1 FROM identities i WHERE i.jid=c.jid AND lower(i.push_name) LIKE '%'||lower(?)||'%')
-		ORDER BY (lower(c.name)=lower(?)) DESC, c.last_msg_at DESC LIMIT 5`, ref, ref, ref, ref)
+		ORDER BY c.last_msg_at DESC LIMIT 50`, ref, ref, ref)
 	if err != nil {
 		return c, err
 	}
 	defer rows.Close()
 
 	var chats []Chat
-	var contactNames []string
+	var names [][]string
 	for rows.Next() {
 		var ch Chat
-		var contactName sql.NullString
-		if err := rows.Scan(&ch.JID, &ch.Kind, &ch.Name, &ch.LastMsgAt, &contactName); err != nil {
+		var contactName, pushName sql.NullString
+		if err := rows.Scan(&ch.JID, &ch.Kind, &ch.Name, &ch.LastMsgAt, &contactName, &pushName); err != nil {
 			return c, err
 		}
 		chats = append(chats, ch)
-		if contactName.Valid {
-			contactNames = append(contactNames, contactName.String)
-		} else {
-			contactNames = append(contactNames, "")
-		}
+		names = append(names, []string{ch.Name, contactName.String, pushName.String})
 	}
-
 	if err := rows.Err(); err != nil {
 		return c, err
 	}
 
 	// Build display names after closing rows to avoid deadlock
-	var names []string
 	for i := range chats {
-		displayName := chats[i].Name
-		if displayName == "" {
-			displayName = contactNames[i]
+		if chats[i].Name == "" {
+			chats[i].Name = names[i][1]
 		}
-		if displayName == "" {
-			displayName = s.ContactName(chats[i].JID)
+		if chats[i].Name == "" {
+			chats[i].Name = s.ContactName(chats[i].JID)
 		}
-		chats[i].Name = displayName
-		names = append(names, displayName)
 	}
 
-	switch {
-	case len(chats) == 0:
+	best := bestMatches(ref, names)
+	if len(best) == 0 {
 		return c, fmt.Errorf("chat not found: %s", ref)
-	case len(chats) > 1 && !strings.EqualFold(names[0], ref):
-		return c, fmt.Errorf("ambiguous %q: %s", ref, strings.Join(names, ", "))
 	}
-
-	return chats[0], nil
+	if len(best) > 1 {
+		var ns []string
+		for _, i := range best {
+			ns = append(ns, chats[i].Name)
+		}
+		return c, fmt.Errorf("ambiguous %q: %s", ref, strings.Join(ns, ", "))
+	}
+	return chats[best[0]], nil
 }
 
 // ChatName is the display name for a chat jid: chats.name (groups), else the contact name.
