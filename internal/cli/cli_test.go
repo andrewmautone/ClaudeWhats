@@ -101,7 +101,7 @@ func TestReadUntilLimitOut(t *testing.T) {
 	}
 
 	outFile := filepath.Join(t.TempDir(), "sub", "x.txt")
-	out = run(t, s, "read", "maria", "--out", outFile, "--no-spawn")
+	out = run(t, s, "read", "maria", "--out="+outFile, "--no-spawn")
 	if !strings.Contains(out, "salvo: "+outFile) || !strings.Contains(out, "(2 mensagens)") {
 		t.Fatalf("expected salvo message: %s", out)
 	}
@@ -114,7 +114,7 @@ func TestReadUntilLimitOut(t *testing.T) {
 	}
 
 	outFileJSON := filepath.Join(t.TempDir(), "x.json")
-	out = run(t, s, "read", "maria", "--out", outFileJSON, "--json", "--no-spawn")
+	out = run(t, s, "read", "maria", "--out="+outFileJSON, "--json", "--no-spawn")
 	var savedPayload struct {
 		Saved string `json:"saved"`
 		Count int    `json:"count"`
@@ -132,6 +132,51 @@ func TestReadUntilLimitOut(t *testing.T) {
 	}
 	if err := json.Unmarshal(jsonContent, &filePayload); err != nil || len(filePayload.Messages) != 2 {
 		t.Fatalf("%v %s", err, jsonContent)
+	}
+}
+
+func TestReadOutAutoPath(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("CLAUDEWHATS_HOME", home)
+	t.Setenv("CLAUDEWHATS_MEMORY_DIR", t.TempDir())
+	s := testStore(t)
+
+	// --out with no value: saved under <home>/exports/, text by default.
+	out := run(t, s, "read", "maria", "--out", "--no-spawn")
+	var saved struct {
+		Saved string `json:"saved"`
+		Count int    `json:"count"`
+	}
+	// text mode: parse the "salvo: <path> (<n> mensagens)" line.
+	if !strings.Contains(out, "salvo: ") || !strings.Contains(out, "(2 mensagens)") {
+		t.Fatalf("expected salvo message: %s", out)
+	}
+	exportDir := filepath.Join(home, "exports")
+	entries, err := os.ReadDir(exportDir)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("expected one file in %s: %v %v", exportDir, entries, err)
+	}
+	if !strings.HasPrefix(entries[0].Name(), "Maria") && !strings.HasPrefix(entries[0].Name(), "maria") {
+		t.Fatalf("unexpected filename: %s", entries[0].Name())
+	}
+	if !strings.HasSuffix(entries[0].Name(), ".txt") {
+		t.Fatalf("expected .txt by default: %s", entries[0].Name())
+	}
+	content, err := os.ReadFile(filepath.Join(exportDir, entries[0].Name()))
+	if err != nil || !strings.Contains(string(content), "bom dia") {
+		t.Fatalf("%v %s", err, content)
+	}
+
+	// --out auto explicitly, with --json: same behavior, .json extension.
+	out = run(t, s, "read", "maria", "--out=auto", "--json", "--no-spawn")
+	if err := json.Unmarshal([]byte(out), &saved); err != nil || saved.Count != 2 || saved.Saved == "" {
+		t.Fatalf("%v %s", err, out)
+	}
+	if !strings.HasPrefix(saved.Saved, exportDir) || !strings.HasSuffix(saved.Saved, ".json") {
+		t.Fatalf("expected json export under %s: %s", exportDir, saved.Saved)
+	}
+	if _, err := os.Stat(saved.Saved); err != nil {
+		t.Fatal(err)
 	}
 }
 

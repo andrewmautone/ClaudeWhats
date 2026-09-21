@@ -15,11 +15,12 @@ type Config struct {
 	Port         int           `yaml:"port"`
 	IdleTimeout  time.Duration `yaml:"idle_timeout"`
 
-	Home     string `yaml:"-"`
-	DBPath   string `yaml:"-"`
-	MediaDir string `yaml:"-"`
-	LogPath  string `yaml:"-"`
-	PidPath  string `yaml:"-"`
+	Home      string `yaml:"-"`
+	DBPath    string `yaml:"-"`
+	MediaDir  string `yaml:"-"`
+	ExportDir string `yaml:"-"`
+	LogPath   string `yaml:"-"`
+	PidPath   string `yaml:"-"`
 	// QR files written by the daemon while pairing (see `claudewhats pair`).
 	QRPNGPath  string `yaml:"-"`
 	QRTxtPath  string `yaml:"-"`
@@ -58,6 +59,7 @@ func Load() (*Config, error) {
 	cfg.Home = home
 	cfg.DBPath = filepath.Join(home, "data.db")
 	cfg.MediaDir = filepath.Join(home, "media")
+	cfg.ExportDir = filepath.Join(home, "exports")
 	cfg.LogPath = filepath.Join(home, "daemon.log")
 	cfg.PidPath = filepath.Join(home, "daemon.pid")
 	cfg.QRPNGPath = filepath.Join(home, "qr.png")
