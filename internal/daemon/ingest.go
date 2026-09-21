@@ -201,6 +201,25 @@ func (in *Ingester) OnContact(jid types.JID, fullName string) {
 	}
 }
 
+// OnChatName applies the name history sync attaches to a conversation: the
+// subject for groups; for DMs an address-book name (manual names still win)
+// that also stands in as push name until the peer sends one.
+func (in *Ingester) OnChatName(jid types.JID, name string) {
+	chat := jidStr(jid)
+	if jid.Server == types.GroupServer {
+		if err := in.Store.UpsertChat(chat, "group", name); err != nil {
+			in.logf("chat name %s: %v", chat, err)
+		}
+		return
+	}
+	if err := in.Store.SetContactNameIfAuto(chat, name); err != nil {
+		in.logf("chat name %s: %v", chat, err)
+	}
+	if err := in.Store.SetPushNameIfEmpty(chat, name); err != nil {
+		in.logf("chat name %s: %v", chat, err)
+	}
+}
+
 func (in *Ingester) OnLoggedOut() {
 	in.logf("LOGGED OUT: sessão encerrada pelo WhatsApp; rode `claudewhats serve` para parear de novo")
 	if in.OnLoggedOutFn != nil {

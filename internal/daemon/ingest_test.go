@@ -200,3 +200,53 @@ func TestOnContactNamesOnlyAutoContacts(t *testing.T) {
 		t.Fatal("manual name must survive contact sync")
 	}
 }
+
+func TestOnChatNameGroupAndDM(t *testing.T) {
+	in, s := newIngester(t, fakeDL{})
+	g, _ := types.ParseJID("123@g.us")
+	p, _ := types.ParseJID("5511888@s.whatsapp.net")
+	in.OnChatName(g, "Trabalho")
+	in.OnChatName(p, "Amor")
+	c, err := s.ResolveChat("trabalho")
+	if err != nil || c.JID != "123@g.us" || c.Kind != "group" {
+		t.Fatalf("group chat name: %v %+v", err, c)
+	}
+	if s.ContactName("5511888@s.whatsapp.net") != "Amor" {
+		t.Fatal("dm chat name should become the contact name")
+	}
+	// the DM's name doubles as push name only while none was seen
+	in.OnPushName(p, "amor zap")
+	s.RenameContact("5511888@s.whatsapp.net", "")
+	in.OnChatName(p, "Amor")
+	if s.ContactName("5511888@s.whatsapp.net") != "amor zap" {
+		t.Fatal("chat name must not overwrite a real push name")
+	}
+	// a manual name wins
+	s.RenameContact("5511888@s.whatsapp.net", "Mãe")
+	in.OnChatName(p, "Amor")
+	if s.ContactName("5511888@s.whatsapp.net") != "Mãe" {
+		t.Fatal("manual name must survive history sync")
+	}
+	// with no push name yet, the chat name fills it in
+	q, _ := types.ParseJID("5511777@s.whatsapp.net")
+	in.OnChatName(q, "Zé")
+	s.RenameContact("5511777@s.whatsapp.net", "")
+	if s.ContactName("5511777@s.whatsapp.net") != "Zé" {
+		t.Fatal("chat name should seed an empty push name")
+	}
+}
+
+func TestOnContactNameResolvesDMChat(t *testing.T) {
+	in, s := newIngester(t, fakeDL{})
+	in.OnMessage(evt("5511888@s.whatsapp.net", "5511888@s.whatsapp.net", "", "m1", false,
+		&waE2E.Message{Conversation: proto.String("oi")}))
+	p, _ := types.ParseJID("5511888@s.whatsapp.net")
+	in.OnContact(p, "Amor")
+	c, err := s.ResolveChat("amor")
+	if err != nil || c.JID != "5511888@s.whatsapp.net" {
+		t.Fatalf("resolve by contact name: %v %+v", err, c)
+	}
+	if c.Name != "Amor" {
+		t.Fatalf("resolved chat should carry the contact name, got %q", c.Name)
+	}
+}
