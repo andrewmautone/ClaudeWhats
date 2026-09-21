@@ -144,6 +144,7 @@ func (s *Server) Handler() http.Handler {
 		writeJSON(w, 200, map[string]int{"requested": req.Count})
 	})
 	mux.HandleFunc("POST /shutdown", func(w http.ResponseWriter, r *http.Request) {
+		s.Touch()
 		writeJSON(w, 200, map[string]bool{"ok": true})
 		go s.Shutdown()
 	})
@@ -170,17 +171,21 @@ func Run(ctx context.Context, cfg *config.Config, background bool, showQR func(s
 		return fmt.Errorf("porta %d ocupada (outro daemon rodando?): %w", cfg.Port, err)
 	}
 	defer ln.Close()
-	os.WriteFile(cfg.PidPath, []byte(strconv.Itoa(os.Getpid())), 0o600)
+	if err := os.WriteFile(cfg.PidPath, []byte(strconv.Itoa(os.Getpid())), 0o600); err != nil {
+		logger.Printf("gravar pidfile %s: %v", cfg.PidPath, err)
+	}
 	defer os.Remove(cfg.PidPath)
 
 	st, err := store.Open(cfg.DBPath)
 	if err != nil {
 		return err
 	}
-	defer st.Close()
+	// st.Close is called explicitly below, after the worker and HTTP server have
+	// stopped touching it — not deferred, so teardown order is guaranteed.
 
 	client, err := wa.Open(ctx, cfg.DBPath, waLog.Stdout("WA", "WARN", false))
 	if err != nil {
+		st.Close()
 		return err
 	}
 	ctx, cancel := context.WithCancel(ctx)
@@ -193,19 +198,22 @@ func Run(ctx context.Context, cfg *config.Config, background bool, showQR func(s
 		if errors.Is(err, wa.ErrNotPaired) {
 			logger.Print(err)
 		}
+		st.Close()
 		return err
 	}
-	defer client.Disconnect()
 	logger.Printf("conectado, pid %d, porta %d", os.Getpid(), cfg.Port)
 
+	var wg sync.WaitGroup
 	worker := &Worker{Store: st, AI: gemini.New(cfg.GeminiAPIKey, cfg.GeminiModel), Log: logger}
-	go worker.Run(ctx)
+	wg.Add(1)
+	go func() { defer wg.Done(); worker.Run(ctx) }()
 
 	srv := &Server{Store: st, WA: waConn{client}, Log: logger, Shutdown: shutdown}
 	if background {
 		srv.Idle = cfg.IdleTimeout
 	}
-	go srv.IdleLoop(ctx)
+	wg.Add(1)
+	go func() { defer wg.Done(); srv.IdleLoop(ctx) }()
 	hs := &http.Server{Handler: srv.Handler()}
 	go hs.Serve(ln)
 
@@ -216,6 +224,18 @@ func Run(ctx context.Context, cfg *config.Config, background bool, showQR func(s
 	case <-ctx.Done():
 	}
 	logger.Print("encerrando")
-	hs.Close()
+
+	// Teardown order: stop accepting HTTP requests, cancel the daemon ctx so the
+	// worker and idle loop unwind, wait for them, then disconnect WhatsApp and
+	// close the store — so nothing is mid-RunOnce or mid-handler when it closes.
+	shutCtx, shutCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	if err := hs.Shutdown(shutCtx); err != nil {
+		logger.Printf("http shutdown: %v", err)
+	}
+	shutCancel()
+	cancel()
+	wg.Wait()
+	client.Disconnect()
+	st.Close()
 	return nil
 }
