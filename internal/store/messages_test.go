@@ -132,3 +132,16 @@ func TestSetGroupMembers(t *testing.T) {
 		t.Fatalf("expected 2 members, got %d", count)
 	}
 }
+
+func TestResolveChatByPushName(t *testing.T) {
+	s := mustMem(t)
+	// contact first seen as a group member (no name), later a push name arrives
+	s.ResolveIdentity("5511222@s.whatsapp.net", "", "")
+	s.UpsertChat("5511222@s.whatsapp.net", "dm", "")
+	s.InsertMessage(Message{ChatJID: "5511222@s.whatsapp.net", ID: "p1", SenderJID: "5511222@s.whatsapp.net", TS: 10, Type: "text", Text: "e aí"})
+	s.ResolveIdentity("5511222@s.whatsapp.net", "", "Zezinho")
+	c, err := s.ResolveChat("zezinho")
+	if err != nil || c.JID != "5511222@s.whatsapp.net" || c.Name != "Zezinho" {
+		t.Fatalf("%+v %v", c, err)
+	}
+}

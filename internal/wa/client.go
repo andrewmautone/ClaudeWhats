@@ -23,6 +23,7 @@ type Handler interface {
 	OnMessage(evt *events.Message)
 	OnGroup(jid types.JID, name string, members []types.JID)
 	OnPushName(jid types.JID, name string)
+	OnContact(jid types.JID, fullName string)
 	OnLoggedOut()
 }
 
@@ -33,7 +34,9 @@ type Client struct {
 }
 
 func Open(ctx context.Context, dbPath string, logger waLog.Logger) (*Client, error) {
-	db, err := sql.Open("sqlite", fmt.Sprintf("file:%s?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)", dbPath))
+	// _txlock=immediate: the store shares this file; taking the write lock at BEGIN
+	// lets whatsmeow txs wait on busy_timeout instead of failing with SQLITE_BUSY.
+	db, err := sql.Open("sqlite", fmt.Sprintf("file:%s?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)&_txlock=immediate", dbPath))
 	if err != nil {
 		return nil, err
 	}
@@ -63,13 +66,19 @@ func (c *Client) Connect(ctx context.Context, h Handler, showQR func(code string
 				h.OnMessage(evt)
 			case *events.HistorySync:
 				for _, conv := range evt.Data.GetConversations() {
-					chat, err := types.ParseJID(conv.GetID())
+					// prefer the phone-number jid so LID-addressed DMs share one chat key
+					id := conv.GetPnJID()
+					if id == "" {
+						id = conv.GetID()
+					}
+					chat, err := types.ParseJID(id)
 					if err != nil {
 						continue
 					}
 					for _, hm := range conv.GetMessages() {
 						m, err := c.WA.ParseWebMessage(chat, hm.GetMessage())
-						if err == nil {
+						// stubs (revokes, calls, system events) carry no Message: nothing to store
+						if err == nil && m.Message != nil {
 							h.OnMessage(m)
 						}
 					}
@@ -84,6 +93,10 @@ func (c *Client) Connect(ctx context.Context, h Handler, showQR func(code string
 				h.OnGroup(evt.JID, evt.Name, participantJIDs(evt.Participants))
 			case *events.PushName:
 				h.OnPushName(evt.JID, evt.NewPushName)
+			case *events.Contact:
+				if name := evt.Action.GetFullName(); name != "" {
+					h.OnContact(evt.JID, name)
+				}
 			case *events.Connected:
 				_ = c.WA.SendPresence(ctx, types.PresenceUnavailable)
 				go c.syncGroups(ctx, h)

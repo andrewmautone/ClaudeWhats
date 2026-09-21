@@ -40,29 +40,43 @@ func digits(s string) string {
 	return b.String()
 }
 
-func (s *Store) contactOf(jid string) (int64, error) {
+// execer is what *sql.DB and *sql.Tx have in common; the identity helpers take
+// it so ResolveIdentity/LinkContacts can run them inside one transaction.
+type execer interface {
+	Exec(query string, args ...any) (sql.Result, error)
+	QueryRow(query string, args ...any) *sql.Row
+}
+
+// begin opens a write transaction. The DSN carries _txlock=immediate, so the
+// write lock is taken up front and concurrent resolvers serialize instead of
+// both seeing "unknown" and creating duplicate contacts.
+func (s *Store) begin() (*sql.Tx, error) {
+	return s.db.Begin()
+}
+
+func contactOf(q execer, jid string) (int64, error) {
 	var id int64
-	err := s.db.QueryRow(`SELECT contact_id FROM identities WHERE jid=?`, jid).Scan(&id)
+	err := q.QueryRow(`SELECT contact_id FROM identities WHERE jid=?`, jid).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, nil
 	}
 	return id, err
 }
 
-func (s *Store) newContact(name string, auto bool) (int64, error) {
+func newContact(q execer, name string, auto bool) (int64, error) {
 	a := 0
 	if auto {
 		a = 1
 	}
-	res, err := s.db.Exec(`INSERT INTO contacts(name, auto, created_at) VALUES (?,?,?)`, name, a, time.Now().Unix())
+	res, err := q.Exec(`INSERT INTO contacts(name, auto, created_at) VALUES (?,?,?)`, name, a, time.Now().Unix())
 	if err != nil {
 		return 0, err
 	}
 	return res.LastInsertId()
 }
 
-func (s *Store) putIdentity(jid string, contactID int64, pushName string) error {
-	_, err := s.db.Exec(`INSERT INTO identities(jid, contact_id, kind, push_name) VALUES (?,?,?,?)
+func putIdentity(q execer, jid string, contactID int64, pushName string) error {
+	_, err := q.Exec(`INSERT INTO identities(jid, contact_id, kind, push_name) VALUES (?,?,?,?)
 		ON CONFLICT(jid) DO UPDATE SET contact_id=excluded.contact_id,
 		push_name=CASE WHEN excluded.push_name<>'' THEN excluded.push_name ELSE identities.push_name END`,
 		jid, contactID, KindOf(jid), pushName)
@@ -70,29 +84,29 @@ func (s *Store) putIdentity(jid string, contactID int64, pushName string) error 
 }
 
 // merge moves every identity of `from` into `into` and deletes `from`.
-func (s *Store) merge(into, from int64) error {
+func merge(q execer, into, from int64) error {
 	if into == from {
 		return nil
 	}
-	if _, err := s.db.Exec(`UPDATE identities SET contact_id=? WHERE contact_id=?`, into, from); err != nil {
+	if _, err := q.Exec(`UPDATE identities SET contact_id=? WHERE contact_id=?`, into, from); err != nil {
 		return err
 	}
 	// keep a name if the winner has none
-	_, err := s.db.Exec(`UPDATE contacts SET name=(SELECT name FROM contacts WHERE id=?) WHERE id=? AND name=''`, from, into)
+	_, err := q.Exec(`UPDATE contacts SET name=(SELECT name FROM contacts WHERE id=?) WHERE id=? AND name=''`, from, into)
 	if err != nil {
 		return err
 	}
-	_, err = s.db.Exec(`DELETE FROM contacts WHERE id=?`, from)
+	_, err = q.Exec(`DELETE FROM contacts WHERE id=?`, from)
 	return err
 }
 
 // winner picks which of two contacts survives a merge: manual (auto=0) wins, else lowest id.
-func (s *Store) winner(a, b int64) (into, from int64, err error) {
+func winner(q execer, a, b int64) (into, from int64, err error) {
 	var autoA, autoB int
-	if err = s.db.QueryRow(`SELECT auto FROM contacts WHERE id=?`, a).Scan(&autoA); err != nil {
+	if err = q.QueryRow(`SELECT auto FROM contacts WHERE id=?`, a).Scan(&autoA); err != nil {
 		return
 	}
-	if err = s.db.QueryRow(`SELECT auto FROM contacts WHERE id=?`, b).Scan(&autoB); err != nil {
+	if err = q.QueryRow(`SELECT auto FROM contacts WHERE id=?`, b).Scan(&autoB); err != nil {
 		return
 	}
 	switch {
@@ -113,13 +127,18 @@ func (s *Store) ResolveIdentity(jid, altJID, pushName string) (int64, error) {
 	if jid == "" {
 		return 0, errors.New("empty jid")
 	}
-	id, err := s.contactOf(jid)
+	tx, err := s.begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	id, err := contactOf(tx, jid)
 	if err != nil {
 		return 0, err
 	}
 	var altID int64
 	if altJID != "" && altJID != jid {
-		if altID, err = s.contactOf(altJID); err != nil {
+		if altID, err = contactOf(tx, altJID); err != nil {
 			return 0, err
 		}
 	}
@@ -127,7 +146,7 @@ func (s *Store) ResolveIdentity(jid, altJID, pushName string) (int64, error) {
 	switch {
 	case id == 0 && altID == 0:
 		// Neither jid nor altJID known: create new auto contact
-		id, err = s.newContact(pushName, true)
+		id, err = newContact(tx, pushName, true)
 		if err != nil {
 			return 0, err
 		}
@@ -136,25 +155,47 @@ func (s *Store) ResolveIdentity(jid, altJID, pushName string) (int64, error) {
 		id = altID
 	case id != 0 && altID != 0 && id != altID:
 		// Both known but different: merge them
-		into, from, err := s.winner(id, altID)
+		into, from, err := winner(tx, id, altID)
 		if err != nil {
 			return 0, err
 		}
-		if err := s.merge(into, from); err != nil {
+		if err := merge(tx, into, from); err != nil {
 			return 0, err
 		}
 		id = into
 	}
 	// Put identities (defer until after merge succeeds)
-	if err := s.putIdentity(jid, id, pushName); err != nil {
+	if err := putIdentity(tx, jid, id, pushName); err != nil {
 		return 0, err
 	}
 	if altJID != "" && altJID != jid {
-		if err := s.putIdentity(altJID, id, pushName); err != nil {
+		if err := putIdentity(tx, altJID, id, pushName); err != nil {
 			return 0, err
 		}
 	}
-	return id, nil
+	return id, tx.Commit()
+}
+
+// PNForLID returns the phone-number jid bound to the same contact as lid, if any.
+func (s *Store) PNForLID(lid string) (string, bool) {
+	var pn string
+	err := s.db.QueryRow(`SELECT pn.jid FROM identities l JOIN identities pn ON pn.contact_id=l.contact_id
+		WHERE l.jid=? AND pn.kind='pn' LIMIT 1`, lid).Scan(&pn)
+	return pn, err == nil && pn != ""
+}
+
+// SetContactNameIfAuto sets the address-book name on jid's contact unless the
+// user has named it manually (auto=0). Unknown jids get an auto contact first.
+func (s *Store) SetContactNameIfAuto(jid, name string) error {
+	if name == "" {
+		return nil
+	}
+	id, err := s.ResolveIdentity(jid, "", "")
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`UPDATE contacts SET name=? WHERE id=? AND auto=1`, name, id)
+	return err
 }
 
 func (s *Store) AddContact(name, number string) (int64, error) {
@@ -163,25 +204,35 @@ func (s *Store) AddContact(name, number string) (int64, error) {
 		return 0, fmt.Errorf("número inválido: %q", number)
 	}
 	jid := d + "@s.whatsapp.net"
-	existing, err := s.contactOf(jid)
+	tx, err := s.begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	existing, err := contactOf(tx, jid)
 	if err != nil {
 		return 0, err
 	}
 	if existing != 0 {
-		_, err = s.db.Exec(`UPDATE contacts SET name=?, auto=0 WHERE id=?`, name, existing)
-		return existing, err
+		if _, err = tx.Exec(`UPDATE contacts SET name=?, auto=0 WHERE id=?`, name, existing); err != nil {
+			return 0, err
+		}
+		return existing, tx.Commit()
 	}
-	id, err := s.newContact(name, false)
+	id, err := newContact(tx, name, false)
 	if err != nil {
 		return 0, err
 	}
-	return id, s.putIdentity(jid, id, "")
+	if err := putIdentity(tx, jid, id, ""); err != nil {
+		return 0, err
+	}
+	return id, tx.Commit()
 }
 
 // findContact resolves a jid, phone number or (case-insensitive substring) name to a contact id.
 func (s *Store) findContact(ref string) (int64, error) {
 	if strings.Contains(ref, "@") {
-		id, err := s.contactOf(ref)
+		id, err := contactOf(s.db, ref)
 		if err != nil {
 			return 0, err
 		}
@@ -203,9 +254,14 @@ func (s *Store) findContact(ref string) (int64, error) {
 	for rows.Next() {
 		var id int64
 		var n string
-		rows.Scan(&id, &n)
+		if err := rows.Scan(&id, &n); err != nil {
+			return 0, err
+		}
 		ids = append(ids, id)
 		names = append(names, n)
+	}
+	if err := rows.Err(); err != nil {
+		return 0, err
 	}
 	switch {
 	case len(ids) == 0:
@@ -225,11 +281,19 @@ func (s *Store) LinkContacts(a, b string) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	into, from, err := s.winner(ia, ib)
+	tx, err := s.begin()
 	if err != nil {
 		return 0, err
 	}
-	return into, s.merge(into, from)
+	defer tx.Rollback()
+	into, from, err := winner(tx, ia, ib)
+	if err != nil {
+		return 0, err
+	}
+	if err := merge(tx, into, from); err != nil {
+		return 0, err
+	}
+	return into, tx.Commit()
 }
 
 func (s *Store) RenameContact(ref, name string) error {

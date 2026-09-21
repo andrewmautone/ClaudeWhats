@@ -8,20 +8,20 @@ import (
 )
 
 type Message struct {
-	ChatJID           string `json:"chat_jid"`
-	ID                string `json:"id"`
-	SenderJID         string `json:"sender_jid"`
-	TS                int64  `json:"ts"`
-	FromMe            bool   `json:"from_me"`
-	Type              string `json:"type"`
-	Text              string `json:"text,omitempty"`
-	MediaPath         string `json:"media_path,omitempty"`
-	MediaMime         string `json:"media_mime,omitempty"`
-	Transcript        string `json:"transcript,omitempty"`
-	TranscriptStatus  string `json:"transcript_status"`
-	QuotedID          string `json:"quoted_id,omitempty"`
-	RawJSON           string `json:"raw_json,omitempty"`
-	Sender            string `json:"sender"` // display, filled by queries
+	ChatJID          string `json:"chat_jid"`
+	ID               string `json:"id"`
+	SenderJID        string `json:"sender_jid"`
+	TS               int64  `json:"ts"`
+	FromMe           bool   `json:"from_me"`
+	Type             string `json:"type"`
+	Text             string `json:"text,omitempty"`
+	MediaPath        string `json:"media_path,omitempty"`
+	MediaMime        string `json:"media_mime,omitempty"`
+	Transcript       string `json:"transcript,omitempty"`
+	TranscriptStatus string `json:"transcript_status"`
+	QuotedID         string `json:"quoted_id,omitempty"`
+	RawJSON          string `json:"raw_json,omitempty"`
+	Sender           string `json:"sender"` // display, filled by queries
 }
 
 type Chat struct {
@@ -232,7 +232,8 @@ func (s *Store) ResolveChat(ref string) (Chat, error) {
 		FROM chats c
 		WHERE lower(c.name) LIKE '%'||lower(?)||'%'
 		   OR CAST((SELECT lower(con.name) FROM contacts con JOIN identities i ON i.contact_id=con.id WHERE i.jid=c.jid LIMIT 1) AS TEXT) LIKE '%'||lower(?)||'%'
-		ORDER BY (lower(c.name)=lower(?)) DESC, c.last_msg_at DESC LIMIT 5`, ref, ref, ref)
+		   OR EXISTS (SELECT 1 FROM identities i WHERE i.jid=c.jid AND lower(i.push_name) LIKE '%'||lower(?)||'%')
+		ORDER BY (lower(c.name)=lower(?)) DESC, c.last_msg_at DESC LIMIT 5`, ref, ref, ref, ref)
 	if err != nil {
 		return c, err
 	}

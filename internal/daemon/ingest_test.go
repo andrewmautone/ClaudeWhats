@@ -140,3 +140,63 @@ func TestOnGroupAndPushName(t *testing.T) {
 		t.Fatal("push name")
 	}
 }
+
+func TestIngestLIDDMLandsInPNChat(t *testing.T) {
+	in, s := newIngester(t, fakeDL{})
+	// incoming: chat == sender == LID, SenderAlt carries the phone number
+	in.OnMessage(evt("999@lid", "999@lid", "5511888@s.whatsapp.net", "L1", false, &waE2E.Message{Conversation: proto.String("oi")}))
+	// from-me: chat is the recipient LID, RecipientAlt carries the phone number
+	e := evt("999@lid", "5511000@s.whatsapp.net", "", "L2", false, &waE2E.Message{Conversation: proto.String("olá")})
+	e.Info.IsFromMe = true
+	e.Info.RecipientAlt, _ = types.ParseJID("5511888@s.whatsapp.net")
+	e.Info.Timestamp = time.Unix(1001, 0)
+	in.OnMessage(e)
+	// LID with no alt at all: falls back to the PN already bound to the contact
+	e = evt("999@lid", "999@lid", "", "L3", false, &waE2E.Message{Conversation: proto.String("de novo")})
+	e.Info.Timestamp = time.Unix(1002, 0)
+	in.OnMessage(e)
+	chats, _ := s.ListChats(0, "")
+	if len(chats) != 1 || chats[0].JID != "5511888@s.whatsapp.net" {
+		t.Fatalf("expected a single PN chat: %+v", chats)
+	}
+	ms, _ := s.ReadMessages("5511888@s.whatsapp.net", 0, 10)
+	if len(ms) != 3 || ms[0].ID != "L1" || ms[1].ID != "L2" || !ms[1].FromMe || ms[2].ID != "L3" {
+		t.Fatalf("%+v", ms)
+	}
+	if c, err := s.ResolveChat("fulano"); err != nil || c.JID != "5511888@s.whatsapp.net" {
+		t.Fatalf("resolve by push name: %+v %v", c, err)
+	}
+}
+
+func TestIngestSkipsStatusAndNewsletter(t *testing.T) {
+	in, s := newIngester(t, fakeDL{data: []byte("IMG")})
+	in.OnMessage(evt("status@broadcast", "5511888@s.whatsapp.net", "", "S1", false, &waE2E.Message{ImageMessage: &waE2E.ImageMessage{Mimetype: proto.String("image/jpeg")}}))
+	in.OnMessage(evt("120363@newsletter", "120363@newsletter", "", "N1", false, &waE2E.Message{Conversation: proto.String("canal")}))
+	if chats, _ := s.ListChats(0, ""); len(chats) != 0 {
+		t.Fatalf("status/newsletter must not create chats: %+v", chats)
+	}
+	if n, _, _ := s.Stats(); n != 0 {
+		t.Fatalf("stored %d messages", n)
+	}
+	if _, ok, _ := s.NextJob(1 << 40); ok {
+		t.Fatal("no gemini job for status media")
+	}
+	if entries, _ := os.ReadDir(in.MediaDir); len(entries) != 0 {
+		t.Fatal("no media should be downloaded")
+	}
+}
+
+func TestOnContactNamesOnlyAutoContacts(t *testing.T) {
+	in, s := newIngester(t, fakeDL{})
+	p, _ := types.ParseJID("5511888@s.whatsapp.net")
+	in.OnPushName(p, "maria zap")
+	in.OnContact(p, "Maria Silva")
+	if s.ContactName("5511888@s.whatsapp.net") != "Maria Silva" {
+		t.Fatal("address-book name should replace push name on auto contacts")
+	}
+	s.RenameContact("5511888@s.whatsapp.net", "Mãe")
+	in.OnContact(p, "Maria Silva")
+	if s.ContactName("5511888@s.whatsapp.net") != "Mãe" {
+		t.Fatal("manual name must survive contact sync")
+	}
+}

@@ -14,12 +14,14 @@ var schema string
 type Store struct{ db *sql.DB }
 
 func Open(path string) (*Store, error) {
-	dsn := fmt.Sprintf("file:%s?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)", path)
+	// _txlock=immediate: every BEGIN takes the write lock up front, so a tx that
+	// reads then writes waits on busy_timeout instead of failing with SQLITE_BUSY.
+	dsn := fmt.Sprintf("file:%s?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)&_txlock=immediate", path)
 	return open(dsn)
 }
 
 func OpenMemory() (*Store, error) {
-	return open("file::memory:?_pragma=foreign_keys(1)")
+	return open("file::memory:?_pragma=foreign_keys(1)&_txlock=immediate")
 }
 
 func open(dsn string) (*Store, error) {
@@ -35,5 +37,5 @@ func open(dsn string) (*Store, error) {
 	return &Store{db: db}, nil
 }
 
-func (s *Store) DB() *sql.DB { return s.db }
+func (s *Store) DB() *sql.DB  { return s.db }
 func (s *Store) Close() error { return s.db.Close() }

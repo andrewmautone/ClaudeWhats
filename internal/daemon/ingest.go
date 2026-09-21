@@ -44,6 +44,10 @@ func jidStr(j types.JID) string {
 
 func (in *Ingester) OnMessage(evt *events.Message) {
 	info := evt.Info
+	// status stories and channels are not conversations: skip before any I/O
+	if info.Chat.Server == types.BroadcastServer || info.Chat.Server == types.NewsletterServer {
+		return
+	}
 	chat := jidStr(info.Chat)
 	sender := jidStr(info.Sender)
 	if chat == "" || sender == "" {
@@ -52,10 +56,6 @@ func (in *Ingester) OnMessage(evt *events.Message) {
 	kind := "dm"
 	if info.IsGroup {
 		kind = "group"
-	}
-	if err := in.Store.UpsertChat(chat, kind, ""); err != nil {
-		in.logf("upsert chat: %v", err)
-		return
 	}
 	pushName := info.PushName
 	if info.IsFromMe {
@@ -68,6 +68,13 @@ func (in *Ingester) OnMessage(evt *events.Message) {
 		if _, err := in.Store.ResolveIdentity(chat, jidStr(info.RecipientAlt), ""); err != nil {
 			in.logf("resolve chat identity: %v", err)
 		}
+	}
+	if kind == "dm" && info.Chat.Server == types.HiddenUserServer {
+		chat = in.canonicalDM(info)
+	}
+	if err := in.Store.UpsertChat(chat, kind, ""); err != nil {
+		in.logf("upsert chat: %v", err)
+		return
 	}
 	cl := wa.Classify(evt.Message)
 	m := store.Message{
@@ -99,6 +106,24 @@ func (in *Ingester) OnMessage(evt *events.Message) {
 			in.logf("enqueue: %v", err)
 		}
 	}
+}
+
+// canonicalDM keys a LID-addressed DM by the contact's phone-number jid, so the
+// same conversation never splits across an @lid and an @s.whatsapp.net chat.
+// whatsmeow carries the PN in RecipientAlt (from-me) / SenderAlt (incoming);
+// failing that, fall back to a PN already bound to the LID's contact.
+func (in *Ingester) canonicalDM(info types.MessageInfo) string {
+	alt := info.SenderAlt
+	if info.IsFromMe {
+		alt = info.RecipientAlt
+	}
+	if !alt.IsEmpty() && alt.Server == types.DefaultUserServer {
+		return jidStr(alt)
+	}
+	if pn, ok := in.Store.PNForLID(jidStr(info.Chat)); ok {
+		return pn
+	}
+	return jidStr(info.Chat)
 }
 
 func (in *Ingester) saveMedia(chat, id string, cl wa.Classified) (string, error) {
@@ -166,6 +191,13 @@ func (in *Ingester) OnGroup(jid types.JID, name string, members []types.JID) {
 func (in *Ingester) OnPushName(jid types.JID, name string) {
 	if _, err := in.Store.ResolveIdentity(jidStr(jid), "", name); err != nil {
 		in.logf("pushname: %v", err)
+	}
+}
+
+// OnContact applies an address-book name; a name the user set by hand wins.
+func (in *Ingester) OnContact(jid types.JID, fullName string) {
+	if err := in.Store.SetContactNameIfAuto(jidStr(jid), fullName); err != nil {
+		in.logf("contact %s: %v", jidStr(jid), err)
 	}
 }
 

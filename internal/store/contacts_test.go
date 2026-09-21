@@ -78,3 +78,40 @@ func TestContactNameFallbacks(t *testing.T) {
 		t.Fatal("KindOf")
 	}
 }
+
+func TestPNForLID(t *testing.T) {
+	s := mustMem(t)
+	if _, ok := s.PNForLID("444@lid"); ok {
+		t.Fatal("unknown lid must not resolve")
+	}
+	s.ResolveIdentity("444@lid", "", "x")
+	if _, ok := s.PNForLID("444@lid"); ok {
+		t.Fatal("lid without pn must not resolve")
+	}
+	s.ResolveIdentity("5511555@s.whatsapp.net", "444@lid", "x")
+	if pn, ok := s.PNForLID("444@lid"); !ok || pn != "5511555@s.whatsapp.net" {
+		t.Fatalf("%q %v", pn, ok)
+	}
+}
+
+func TestSetContactNameIfAuto(t *testing.T) {
+	s := mustMem(t)
+	// unknown jid: creates an auto contact and names it
+	if err := s.SetContactNameIfAuto("5511444@s.whatsapp.net", "Ana Livro"); err != nil {
+		t.Fatal(err)
+	}
+	if s.ContactName("5511444@s.whatsapp.net") != "Ana Livro" {
+		t.Fatal("auto contact should take the address-book name")
+	}
+	// manual contact keeps its name
+	s.AddContact("Maria", "5511888")
+	if err := s.SetContactNameIfAuto("5511888@s.whatsapp.net", "Maria Silva"); err != nil {
+		t.Fatal(err)
+	}
+	if s.ContactName("5511888@s.whatsapp.net") != "Maria" {
+		t.Fatal("manual name must win over address book")
+	}
+	if err := s.SetContactNameIfAuto("5511888@s.whatsapp.net", ""); err != nil {
+		t.Fatal(err)
+	}
+}
