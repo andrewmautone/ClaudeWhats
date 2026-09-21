@@ -128,7 +128,9 @@ func (in *Ingester) OnGroup(jid types.JID, name string, members []types.JID) {
 		js := make([]string, 0, len(members))
 		for _, m := range members {
 			js = append(js, jidStr(m))
-			in.Store.ResolveIdentity(jidStr(m), "", "")
+			if _, err := in.Store.ResolveIdentity(jidStr(m), "", ""); err != nil {
+				in.logf("resolve member %s: %v", jidStr(m), err)
+			}
 		}
 		if err := in.Store.SetGroupMembers(chat, js); err != nil {
 			in.logf("members %s: %v", chat, err)

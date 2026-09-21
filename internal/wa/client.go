@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"sync"
 
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/proto/waE2E"
@@ -27,6 +28,8 @@ type Handler interface {
 
 type Client struct {
 	WA *whatsmeow.Client
+
+	handlerOnce sync.Once
 }
 
 func Open(ctx context.Context, dbPath string, logger waLog.Logger) (*Client, error) {
@@ -47,40 +50,47 @@ func Open(ctx context.Context, dbPath string, logger waLog.Logger) (*Client, err
 
 func (c *Client) IsPaired() bool { return c.WA.Store.ID != nil }
 
+// Connect registers the event handler (once per Client, even across repeated calls) and
+// connects to WhatsApp. ctx is captured by the handler closure for the lifetime of the
+// client: it is reused on every subsequent reconnect to send the post-connect presence
+// update and to drive the joined-groups sync, so callers must keep it alive (and only
+// cancel it) for as long as the Client itself is in use, not just for this one call.
 func (c *Client) Connect(ctx context.Context, h Handler, showQR func(code string)) error {
-	c.WA.AddEventHandler(func(raw any) {
-		switch evt := raw.(type) {
-		case *events.Message:
-			h.OnMessage(evt)
-		case *events.HistorySync:
-			for _, conv := range evt.Data.GetConversations() {
-				chat, err := types.ParseJID(conv.GetID())
-				if err != nil {
-					continue
-				}
-				for _, hm := range conv.GetMessages() {
-					m, err := c.WA.ParseWebMessage(chat, hm.GetMessage())
-					if err == nil {
-						h.OnMessage(m)
+	c.handlerOnce.Do(func() {
+		c.WA.AddEventHandler(func(raw any) {
+			switch evt := raw.(type) {
+			case *events.Message:
+				h.OnMessage(evt)
+			case *events.HistorySync:
+				for _, conv := range evt.Data.GetConversations() {
+					chat, err := types.ParseJID(conv.GetID())
+					if err != nil {
+						continue
+					}
+					for _, hm := range conv.GetMessages() {
+						m, err := c.WA.ParseWebMessage(chat, hm.GetMessage())
+						if err == nil {
+							h.OnMessage(m)
+						}
 					}
 				}
+			case *events.GroupInfo:
+				if evt.Name != nil {
+					h.OnGroup(evt.JID, evt.Name.Name, nil)
+				}
+			case *events.JoinedGroup:
+				// JoinedGroup embeds types.GroupInfo, which itself embeds GroupName; both
+				// Name and Participants are promoted straight onto JoinedGroup.
+				h.OnGroup(evt.JID, evt.Name, participantJIDs(evt.Participants))
+			case *events.PushName:
+				h.OnPushName(evt.JID, evt.NewPushName)
+			case *events.Connected:
+				_ = c.WA.SendPresence(ctx, types.PresenceUnavailable)
+				go c.syncGroups(ctx, h)
+			case *events.LoggedOut:
+				h.OnLoggedOut()
 			}
-		case *events.GroupInfo:
-			if evt.Name != nil {
-				h.OnGroup(evt.JID, evt.Name.Name, nil)
-			}
-		case *events.JoinedGroup:
-			// JoinedGroup embeds types.GroupInfo, which itself embeds GroupName; both
-			// Name and Participants are promoted straight onto JoinedGroup.
-			h.OnGroup(evt.JID, evt.Name, participantJIDs(evt.Participants))
-		case *events.PushName:
-			h.OnPushName(evt.JID, evt.NewPushName)
-		case *events.Connected:
-			_ = c.WA.SendPresence(ctx, types.PresenceUnavailable)
-			go c.syncGroups(ctx, h)
-		case *events.LoggedOut:
-			h.OnLoggedOut()
-		}
+		})
 	})
 	if !c.IsPaired() {
 		if showQR == nil {
@@ -135,6 +145,9 @@ func (c *Client) SendText(ctx context.Context, to types.JID, text string) (strin
 // RequestHistory asks the phone for `count` messages older than `oldest` in chat.
 // The phone answers with a HistorySync event, which flows through Handler.OnMessage.
 func (c *Client) RequestHistory(ctx context.Context, chat types.JID, oldest *types.MessageInfo, count int) error {
+	if c.WA.Store.ID == nil {
+		return ErrNotPaired
+	}
 	if oldest == nil {
 		oldest = &types.MessageInfo{MessageSource: types.MessageSource{Chat: chat}}
 	}
