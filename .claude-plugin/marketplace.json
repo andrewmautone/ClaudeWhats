@@ -8,7 +8,7 @@
       "name": "claudewhats",
       "source": ".",
       "description": "WhatsApp local (SQLite) com transcrição Gemini, exposto como CLI e skill para o Claude",
-      "version": "0.4.0"
+      "version": "0.4.1"
     }
   ]
 }

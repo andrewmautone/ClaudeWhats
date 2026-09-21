@@ -46,10 +46,11 @@ Cada comando de memória imprime exatamente o que a ferramenta manda (inclusive 
 
 ## Regras
 
-1. Antes de qualquer leitura, rode `claudewhats memory wake` e faça o que ele imprimir até o fim (inclusive `wake 2 N` e os `nap` pedidos). Quando aprender algo com efeito duradouro sobre uma pessoa, grupo ou assunto — decisão, combinado, preferência, fato — registre `claudewhats memory note "<1 linha, ≤280 bytes, cite o nome da pessoa/grupo>"`. Se `note` pedir compressão, faça antes da próxima ação. Não registre o que já está na memória.
-2. Leitura primeiro: `chats` → `read`/`search`/`summary`. Nunca peça ao usuário para abrir terminal do daemon; ele sobe sozinho em background.
-3. Se `status --json` mostrar `paired: false` ou um comando errar com "não pareado", siga o fluxo de pareamento do Setup: usuário com a câmera pronta → `pair --json` (abre o navegador sozinho) → `pair --wait --json`. Se o navegador não abriu, passe o `qr_html` (ou faça Read no `qr_png`) para o usuário. Repita se expirar.
-4. `contact link` só quando o usuário pedir explicitamente para juntar duas identidades (ex.: "o 55...@lid do grupo é a Maria").
-5. Se `transcript_status` vier `pending` em muitas mensagens, avise que a transcrição ainda está rodando e ofereça tentar de novo.
-6. Ambiguidade no `<chat>` volta erro listando candidatos: pergunte ao usuário qual.
-7. `send` só com pedido explícito do usuário: confirme com ele o chat e o texto exatos antes de rodar com `--yes`. Nunca envie por iniciativa própria.
+1. **A resposta ao usuário é sempre o conteúdo que ele pediu** (as mensagens, o resumo, a confirmação do envio) — escrita por você, no chat, completa. Nunca deixe o conteúdo só dentro da saída de uma ferramenta.
+2. **Memória é bastidor.** Antes de qualquer leitura rode `claudewhats memory wake` e faça o que ele imprimir até o fim (inclusive `wake 2 N` e os `nap` pedidos). Quando aprender algo com efeito duradouro sobre uma pessoa, grupo ou assunto — decisão, combinado, preferência, fato, "grupo do X = ..." — registre `claudewhats memory note "<1 linha, ≤280 bytes, cite o nome>"`; se pedir compressão, faça na hora. Tudo isso é silencioso: **não narre** que anotou, comprimiu ou acordou a memória, e não transforme a memória em assunto da resposta. Não registre o que já está na memória.
+3. Leitura primeiro: `chats` → `read`/`search`/`summary`. Nunca peça ao usuário para abrir terminal do daemon; ele sobe sozinho em background.
+4. Se `status --json` mostrar `paired: false` ou um comando errar com "não pareado", siga o fluxo de pareamento do Setup: usuário com a câmera pronta → `pair --json` (abre o navegador sozinho) → `pair --wait --json`. Se o navegador não abriu, passe o `qr_html` (ou faça Read no `qr_png`) para o usuário. Repita se expirar.
+5. `contact link` só quando o usuário pedir explicitamente para juntar duas identidades (ex.: "o 55...@lid do grupo é a Maria").
+6. Se `transcript_status` vier `pending` em muitas mensagens, avise que a transcrição ainda está rodando e ofereça tentar de novo.
+7. Ambiguidade no `<chat>` volta erro listando candidatos: pergunte ao usuário qual.
+8. `send` só com pedido explícito do usuário: confirme com ele o chat e o texto exatos antes de rodar com `--yes`. Nunca envie por iniciativa própria.
