@@ -13,6 +13,14 @@ gerenciar contatos/identidades.
 ## Decisões
 
 - Interface: CLI + daemon. Sem MCP.
+- Leitura sempre do banco: `chats/read/search/summary/contact/status` só abrem o SQLite e
+  nunca conectam no WhatsApp. Só `send`, `sync` e a ingestão precisam do daemon.
+- Daemon invisível e auto-gerenciado: nenhum comando exige um terminal aberto com `serve`.
+  Quem precisa do daemon faz auto-spawn (processo detached, sem janela, log em arquivo) e
+  o daemon encerra sozinho após `idle_timeout` (default 30m) sem comandos. O WhatsApp
+  entrega o backlog offline na reconexão, então mensagens do período morto chegam
+  atrasadas, não se perdem. `serve` fica para o primeiro pareamento (QR) e para quem
+  quiser rodá-lo fixo (pm2/serviço) — nesse caso o auto-spawn é no-op.
 - Lib WhatsApp: `go.mau.fi/whatsmeow`. Sessão no mesmo SQLite (`sqlstore`).
 - SQLite sem cgo: `modernc.org/sqlite`. WAL ligado; comandos de leitura abrem o banco
   em paralelo ao daemon.
@@ -81,6 +89,18 @@ apontar pro contato do PN; se ambos já tinham contato, funde (o com `auto=0` ve
 5. HTTP em `127.0.0.1:<port>` (porta no config, default 7411): `POST /send`, `POST /sync`,
    `GET /status`. Sem auth além de loopback.
 6. Após conectar e após cada envio: `SendPresence(unavailable)`.
+7. Ciclo de vida:
+   - `serve` (foreground): QR no terminal se não pareado; roda até Ctrl+C, sem idle timeout.
+   - `serve --background` (usado pelo auto-spawn): sem console (Windows: `CREATE_NO_WINDOW`
+     + `DETACHED_PROCESS`; Unix: `Setsid`), stdout/err em `~/.claudewhats/daemon.log`,
+     pidfile `daemon.pid`. Se não pareado, sai com erro no log e o CLI avisa
+     "rode `claudewhats serve` uma vez para parear".
+   - Idle: cada request HTTP renova o timer; sem request por `idle_timeout` → desconecta
+     limpo e sai. `serve --background --idle 0` = nunca sai.
+   - Auto-spawn (`internal/daemon/client.go`): `GET /status`; se falha, lança
+     `serve --background` e espera até 15s pelo `/status`. Lock por pidfile evita dois
+     daemons.
+   - `stop`: comando que pede `POST /shutdown`.
 
 ## Comandos
 
@@ -89,7 +109,8 @@ grupo (case-insensitive, substring; ambíguo → erro listando candidatos).
 
 | comando | comportamento |
 |---|---|
-| `serve` | daemon acima |
+| `serve [--background] [--idle 30m]` | daemon acima |
+| `stop` | encerra o daemon em background |
 | `status` | daemon vivo? conectado? total msgs, jobs pendentes |
 | `chats [--since 7d] [--kind dm\|group]` | chats ordenados por `last_msg_at`, com contagem no período |
 | `read <chat> [--since 24h] [--limit 200]` | mensagens cronológicas: `ts sender(type): text/transcript` |
