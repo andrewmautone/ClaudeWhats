@@ -1,0 +1,97 @@
+#0-3 resumo 0-3
+#4-7 resumo 4-7
+#8-11 resumo 8-11
+#12-15 resumo 12-15
+#16-19 resumo 16-19
+#20-23 resumo 20-23
+#24-27 resumo 24-27
+#28-31 resumo 28-31
+#32-33 resumo 32-33
+#34-35 resumo 34-35
+#36-37 resumo 36-37
+#38-39 resumo 38-39
+#40-41 resumo 40-41
+#42-43 resumo 42-43
+#44-45 resumo 44-45
+#46-47 resumo 46-47
+#48-49 resumo 48-49
+#50-51 resumo 50-51
+#52-53 resumo 52-53
+#54-55 resumo 54-55
+#56-57 resumo 56-57
+#58-59 resumo 58-59
+#60-61 resumo 60-61
+#62-63 resumo 62-63
+#64-65 resumo 64-65
+#66-67 resumo 66-67
+#68-69 resumo 68-69
+#70-71 resumo 70-71
+#72-73 resumo 72-73
+#74-75 resumo 74-75
+#76-77 resumo 76-77
+#78-79 resumo 78-79
+#80-81 resumo 80-81
+#82-83 resumo 82-83
+#84-85 resumo 84-85
+#86-87 resumo 86-87
+#88-89 resumo 88-89
+#90-91 resumo 90-91
+#92 2026-09-21 memoria numero 92 com acento é ção 92
+#93 2026-09-21 memoria numero 93 com acento é ção 93
+#94 2026-09-21 memoria numero 94 com acento é ção 94
+#95 2026-09-21 memoria numero 95 com acento é ção 95
+#96 2026-09-21 memoria numero 96 com acento é ção 96
+#97 2026-09-21 memoria numero 97 com acento é ção 97
+#98 2026-09-21 memoria numero 98 com acento é ção 98
+#99 2026-09-21 memoria numero 99 com acento é ção 99
+#100 2026-09-21 memoria numero 100 com acento é ção 100
+#101 2026-09-21 memoria numero 101 com acento é ção 101
+#102 2026-09-21 memoria numero 102 com acento é ção 102
+#103 2026-09-21 memoria numero 103 com acento é ção 103
+#104 2026-09-21 memoria numero 104 com acento é ção 104
+#105 2026-09-21 memoria numero 105 com acento é ção 105
+#106 2026-09-21 memoria numero 106 com acento é ção 106
+#107 2026-09-21 memoria numero 107 com acento é ção 107
+#108 2026-09-21 memoria numero 108 com acento é ção 108
+#109 2026-09-21 memoria numero 109 com acento é ção 109
+#110 2026-09-21 memoria numero 110 com acento é ção 110
+#111 2026-09-21 memoria numero 111 com acento é ção 111
+#112 2026-09-21 memoria numero 112 com acento é ção 112
+#113 2026-09-21 memoria numero 113 com acento é ção 113
+#114 2026-09-21 memoria numero 114 com acento é ção 114
+#115 2026-09-21 memoria numero 115 com acento é ção 115
+#116 2026-09-21 memoria numero 116 com acento é ção 116
+#117 2026-09-21 memoria numero 117 com acento é ção 117
+#118 2026-09-21 memoria numero 118 com acento é ção 118
+#119 2026-09-21 memoria numero 119 com acento é ção 119
+#120 2026-09-21 memoria numero 120 com acento é ção 120
+#121 2026-09-21 memoria numero 121 com acento é ção 121
+#122 2026-09-21 memoria numero 122 com acento é ção 122
+#123 2026-09-21 memoria numero 123 com acento é ção 123
+#124 2026-09-21 memoria numero 124 com acento é ção 124
+#125 2026-09-21 memoria numero 125 com acento é ção 125
+#126 2026-09-21 memoria numero 126 com acento é ção 126
+#127 2026-09-21 memoria numero 127 com acento é ção 127
+#128 2026-09-21 memoria numero 128 com acento é ção 128
+#129 2026-09-21 memoria numero 129 com acento é ção 129
+#130 2026-09-21 memoria numero 130 com acento é ção 130
+#131 2026-09-21 memoria numero 131 com acento é ção 131
+#132 2026-09-21 memoria numero 132 com acento é ção 132
+#133 2026-09-21 memoria numero 133 com acento é ção 133
+#134 2026-09-21 memoria numero 134 com acento é ção 134
+#135 2026-09-21 memoria numero 135 com acento é ção 135
+#136 2026-09-21 memoria numero 136 com acento é ção 136
+#137 2026-09-21 memoria numero 137 com acento é ção 137
+#138 2026-09-21 memoria numero 138 com acento é ção 138
+#139 2026-09-21 memoria numero 139 com acento é ção 139
+#140 2026-09-21 memoria numero 140 com acento é ção 140
+#141 2026-09-21 memoria numero 141 com acento é ção 141
+#142 2026-09-21 memoria numero 142 com acento é ção 142
+#143 2026-09-21 memoria numero 143 com acento é ção 143
+#144 2026-09-21 memoria numero 144 com acento é ção 144
+#145 2026-09-21 memoria numero 145 com acento é ção 145
+#146 2026-09-21 memoria numero 146 com acento é ção 146
+#147 2026-09-21 memoria numero 147 com acento é ção 147
+#148 2026-09-21 memoria numero 148 com acento é ção 148
+#149 2026-09-21 memoria numero 149 com acento é ção 149
+You are awake.

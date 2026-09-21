@@ -1,0 +1,8 @@
+Compress memories #40-41 into one line of at most 280 bytes.
+Keep what has lasting effect, drop what does not. Invent nothing.
+
+  #40 2026-09-21 x
+  #41 2026-09-21 y
+
+3 compressions remain after this one.
+Run: claudewhats memory nap 40-41 "<your line>"

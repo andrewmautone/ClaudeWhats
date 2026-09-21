@@ -1,0 +1,17 @@
+Cannot wake: the memory context needs #0-7, which is not compressed yet.
+Do the 47 compressions below, then run claudewhats memory wake again.
+
+Compress memories #0-7 into one line of at most 280 bytes.
+Keep what has lasting effect, drop what does not. Invent nothing.
+
+  #0 2026-09-21 memoria numero 0 com acento é ção 0
+  #1 2026-09-21 memoria numero 1 com acento é ção 1
+  #2 2026-09-21 memoria numero 2 com acento é ção 2
+  #3 2026-09-21 memoria numero 3 com acento é ção 3
+  #4 2026-09-21 memoria numero 4 com acento é ção 4
+  #5 2026-09-21 memoria numero 5 com acento é ção 5
+  #6 2026-09-21 memoria numero 6 com acento é ção 6
+  #7 2026-09-21 memoria numero 7 com acento é ção 7
+
+46 compressions remain after this one.
+Run: claudewhats memory nap 0-7 "<your line>"

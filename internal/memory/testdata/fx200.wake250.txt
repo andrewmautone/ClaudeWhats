@@ -1,0 +1,1 @@
+T=250, but the log holds 200 memories. Run: claudewhats memory wake
