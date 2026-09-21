@@ -30,7 +30,7 @@ func TestJobLifecycle(t *testing.T) {
 	if !gave {
 		t.Fatal("should give up at maxAttempts")
 	}
-	ms, _ := s.ReadMessages("123@g.us", 0, 10)
+	ms, _ := s.ReadMessages("123@g.us", 0, 0, 10)
 	if ms[0].TranscriptStatus != "failed" {
 		t.Fatal(ms[0].TranscriptStatus)
 	}

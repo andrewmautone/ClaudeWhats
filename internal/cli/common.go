@@ -135,6 +135,31 @@ func parseSince(s string) (int64, error) {
 	return time.Now().Add(-d).Unix(), nil
 }
 
+// parseUntil is parseSince, except a bare date (YYYY-MM-DD) means the end of
+// that day (23:59:59 local), so --since and --until on the same date include
+// the whole day.
+func parseUntil(s string) (int64, error) {
+	s = strings.TrimSpace(s)
+	if s == "" || s == "0" {
+		return 0, nil
+	}
+	if t, err := time.ParseInLocation("2006-01-02", s, time.Local); err == nil {
+		return t.Add(24*time.Hour - time.Second).Unix(), nil
+	}
+	if strings.HasSuffix(s, "d") {
+		n, err := strconv.Atoi(strings.TrimSuffix(s, "d"))
+		if err != nil {
+			return 0, fmt.Errorf("until inválido: %q", s)
+		}
+		return time.Now().Add(-time.Duration(n) * 24 * time.Hour).Unix(), nil
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		return 0, fmt.Errorf("until inválido: %q (use 24h, 7d, 30m ou 2026-09-21)", s)
+	}
+	return time.Now().Add(-d).Unix(), nil
+}
+
 func fmtTS(ts int64) string { return time.Unix(ts, 0).Local().Format("2006-01-02 15:04") }
 
 func printf(format string, a ...any) { fmt.Fprintf(out, format, a...) }

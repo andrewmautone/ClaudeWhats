@@ -44,7 +44,7 @@ type chatSummary struct {
 }
 
 func init() {
-	var since, chat string
+	var since, until, chat string
 	var limit int
 	cmd := &cobra.Command{
 		Use:   "summary",
@@ -56,6 +56,10 @@ func init() {
 			}
 			defer closeStore(s)
 			sv, err := parseSince(since)
+			if err != nil {
+				return err
+			}
+			uv, err := parseUntil(until)
 			if err != nil {
 				return err
 			}
@@ -84,7 +88,7 @@ func init() {
 			ctx := context.Background()
 			var results []chatSummary
 			for _, c := range chats {
-				msgs, err := s.ReadMessages(c.JID, sv, limit)
+				msgs, err := s.ReadMessages(c.JID, sv, uv, limit)
 				if err != nil {
 					return err
 				}
@@ -126,7 +130,8 @@ func init() {
 		},
 	}
 	cmd.Flags().StringVar(&since, "since", "24h", "janela: 24h, 7d, 2026-09-21")
+	cmd.Flags().StringVar(&until, "until", "", "limite superior: 24h, 7d, 2026-09-21")
 	cmd.Flags().StringVar(&chat, "chat", "", "só este chat")
-	cmd.Flags().IntVar(&limit, "limit", 500, "máximo de mensagens por chat")
+	cmd.Flags().IntVar(&limit, "limit", 500, "máximo de mensagens por chat; 0 = todas")
 	root.AddCommand(cmd)
 }

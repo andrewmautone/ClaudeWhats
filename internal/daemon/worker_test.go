@@ -45,7 +45,7 @@ func TestWorkerTranscribes(t *testing.T) {
 	if err != nil || !worked {
 		t.Fatal(worked, err)
 	}
-	ms, _ := s.ReadMessages("1@s.whatsapp.net", 0, 1)
+	ms, _ := s.ReadMessages("1@s.whatsapp.net", 0, 0, 1)
 	if ms[0].Transcript != "texto" || ms[0].TranscriptStatus != "done" {
 		t.Fatalf("%+v", ms[0])
 	}
@@ -61,7 +61,7 @@ func TestWorkerImageUsesDescribeAndFailsAfterMax(t *testing.T) {
 	ai := &fakeAI{err: errors.New("quota")}
 	w := &Worker{Store: s, AI: ai, MaxAttempts: 1}
 	w.RunOnce(context.Background())
-	ms, _ := s.ReadMessages("1@s.whatsapp.net", 0, 1)
+	ms, _ := s.ReadMessages("1@s.whatsapp.net", 0, 0, 1)
 	if ms[0].TranscriptStatus != "failed" {
 		t.Fatalf("%+v", ms[0])
 	}
@@ -71,7 +71,7 @@ func TestWorkerImageUsesDescribeAndFailsAfterMax(t *testing.T) {
 	// message M already exists (dedup) so re-mark pending manually
 	s.SetTranscript("1@s.whatsapp.net", "M", "", "pending")
 	w.RunOnce(context.Background())
-	ms, _ = s.ReadMessages("1@s.whatsapp.net", 0, 1)
+	ms, _ = s.ReadMessages("1@s.whatsapp.net", 0, 0, 1)
 	if ms[0].Transcript != "img:gato" {
 		t.Fatalf("%+v", ms[0])
 	}
@@ -85,7 +85,7 @@ func TestWorkerMissingFileGivesUp(t *testing.T) {
 	s.EnqueueJob("1@s.whatsapp.net", "Z")
 	w := &Worker{Store: s, AI: &fakeAI{}}
 	w.RunOnce(context.Background())
-	ms, _ := s.ReadMessages("1@s.whatsapp.net", 0, 1)
+	ms, _ := s.ReadMessages("1@s.whatsapp.net", 0, 0, 1)
 	if ms[0].TranscriptStatus != "failed" {
 		t.Fatal("missing file should fail immediately")
 	}
@@ -101,7 +101,7 @@ func TestWorkerMissingKeyLeavesJobPending(t *testing.T) {
 	if worked || !errors.Is(err, gemini.ErrNoKey) {
 		t.Fatalf("worked=%v err=%v", worked, err)
 	}
-	ms, _ := s.ReadMessages("1@s.whatsapp.net", 0, 1)
+	ms, _ := s.ReadMessages("1@s.whatsapp.net", 0, 0, 1)
 	if ms[0].TranscriptStatus != "pending" {
 		t.Fatalf("missing key must not fail the message: %+v", ms[0])
 	}
@@ -114,7 +114,7 @@ func TestWorkerMissingKeyLeavesJobPending(t *testing.T) {
 	if worked, err := w.RunOnce(context.Background()); !worked || err != nil {
 		t.Fatal(worked, err)
 	}
-	ms, _ = s.ReadMessages("1@s.whatsapp.net", 0, 1)
+	ms, _ = s.ReadMessages("1@s.whatsapp.net", 0, 0, 1)
 	if ms[0].Transcript != "agora sim" || ms[0].TranscriptStatus != "done" {
 		t.Fatalf("%+v", ms[0])
 	}

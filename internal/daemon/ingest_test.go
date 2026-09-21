@@ -50,7 +50,7 @@ func evt(chat, sender, alt, id string, group bool, msg *waE2E.Message) *events.M
 func TestIngestTextDM(t *testing.T) {
 	in, s := newIngester(t, fakeDL{})
 	in.OnMessage(evt("5511888@s.whatsapp.net", "5511888@s.whatsapp.net", "999@lid", "A1", false, &waE2E.Message{Conversation: proto.String("oi")}))
-	ms, _ := s.ReadMessages("5511888@s.whatsapp.net", 0, 10)
+	ms, _ := s.ReadMessages("5511888@s.whatsapp.net", 0, 0, 10)
 	if len(ms) != 1 || ms[0].Type != "text" || ms[0].Text != "oi" || ms[0].Sender != "Fulano" || ms[0].TranscriptStatus != "skipped" {
 		t.Fatalf("%+v", ms)
 	}
@@ -66,7 +66,7 @@ func TestIngestTextDM(t *testing.T) {
 func TestIngestAudioInGroupDownloadsAndEnqueues(t *testing.T) {
 	in, s := newIngester(t, fakeDL{data: []byte("OGG")})
 	in.OnMessage(evt("123@g.us", "777@lid", "", "B1", true, &waE2E.Message{AudioMessage: &waE2E.AudioMessage{Mimetype: proto.String("audio/ogg; codecs=opus")}}))
-	ms, _ := s.ReadMessages("123@g.us", 0, 10)
+	ms, _ := s.ReadMessages("123@g.us", 0, 0, 10)
 	if len(ms) != 1 || ms[0].Type != "audio" || ms[0].TranscriptStatus != "pending" || ms[0].MediaMime != "audio/ogg" {
 		t.Fatalf("%+v", ms)
 	}
@@ -90,7 +90,7 @@ func TestIngestAudioInGroupDownloadsAndEnqueues(t *testing.T) {
 func TestIngestDownloadFailure(t *testing.T) {
 	in, s := newIngester(t, fakeDL{err: errors.New("net")})
 	in.OnMessage(evt("5511888@s.whatsapp.net", "5511888@s.whatsapp.net", "", "C1", false, &waE2E.Message{ImageMessage: &waE2E.ImageMessage{Mimetype: proto.String("image/jpeg")}}))
-	ms, _ := s.ReadMessages("5511888@s.whatsapp.net", 0, 10)
+	ms, _ := s.ReadMessages("5511888@s.whatsapp.net", 0, 0, 10)
 	if ms[0].TranscriptStatus != "failed" || ms[0].MediaPath != "" {
 		t.Fatalf("%+v", ms[0])
 	}
@@ -104,7 +104,7 @@ func TestIngestMediaPathTraversalIsSanitized(t *testing.T) {
 	outside := filepath.Join(filepath.Dir(in.MediaDir), "evil")
 	doc := &waE2E.Message{DocumentMessage: &waE2E.DocumentMessage{Mimetype: proto.String("application/pdf"), FileName: proto.String(`a.\..\evil`)}}
 	in.OnMessage(evt("5511888@s.whatsapp.net", "5511888@s.whatsapp.net", "", `..\..\x`, false, doc))
-	ms, _ := s.ReadMessages("5511888@s.whatsapp.net", 0, 10)
+	ms, _ := s.ReadMessages("5511888@s.whatsapp.net", 0, 0, 10)
 	if len(ms) != 1 || ms[0].MediaPath == "" {
 		t.Fatalf("%+v", ms)
 	}
@@ -159,7 +159,7 @@ func TestIngestLIDDMLandsInPNChat(t *testing.T) {
 	if len(chats) != 1 || chats[0].JID != "5511888@s.whatsapp.net" {
 		t.Fatalf("expected a single PN chat: %+v", chats)
 	}
-	ms, _ := s.ReadMessages("5511888@s.whatsapp.net", 0, 10)
+	ms, _ := s.ReadMessages("5511888@s.whatsapp.net", 0, 0, 10)
 	if len(ms) != 3 || ms[0].ID != "L1" || ms[1].ID != "L2" || !ms[1].FromMe || ms[2].ID != "L3" {
 		t.Fatalf("%+v", ms)
 	}
@@ -271,11 +271,11 @@ func TestIngestLIDResolvedFromStore(t *testing.T) {
 	}
 	// DM keyed by LID with no alt: lands in the PN chat
 	in.OnMessage(evt("555@lid", "555@lid", "", "D1", false, &waE2E.Message{Conversation: proto.String("dm")}))
-	ms, _ := s.ReadMessages("5511777@s.whatsapp.net", 0, 10)
+	ms, _ := s.ReadMessages("5511777@s.whatsapp.net", 0, 0, 10)
 	if len(ms) != 1 || ms[0].ID != "D1" {
 		t.Fatalf("dm should land in pn chat: %+v", ms)
 	}
-	if ms, _ := s.ReadMessages("555@lid", 0, 10); len(ms) != 0 {
+	if ms, _ := s.ReadMessages("555@lid", 0, 0, 10); len(ms) != 0 {
 		t.Fatalf("no lid chat expected: %+v", ms)
 	}
 	// unknown LID stays unlinked, no error

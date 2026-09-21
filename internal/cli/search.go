@@ -6,7 +6,7 @@ import (
 )
 
 func init() {
-	var since, chat string
+	var since, until, chat string
 	var limit int
 	cmd := &cobra.Command{
 		Use:   "search <texto>",
@@ -30,6 +30,10 @@ func init() {
 			if err != nil {
 				return err
 			}
+			uv, err := parseUntil(until)
+			if err != nil {
+				return err
+			}
 			q := ""
 			for i, a := range args {
 				if i > 0 {
@@ -37,7 +41,7 @@ func init() {
 				}
 				q += a
 			}
-			msgs, err := s.Search(q, chatJID, sv, limit)
+			msgs, err := s.Search(q, chatJID, sv, uv, limit)
 			if err != nil {
 				return err
 			}
@@ -51,7 +55,8 @@ func init() {
 		},
 	}
 	cmd.Flags().StringVar(&since, "since", "", "janela")
+	cmd.Flags().StringVar(&until, "until", "", "limite superior: 24h, 7d, 2026-09-21")
 	cmd.Flags().StringVar(&chat, "chat", "", "limitar a um chat")
-	cmd.Flags().IntVar(&limit, "limit", 50, "máximo de resultados")
+	cmd.Flags().IntVar(&limit, "limit", 50, "máximo de resultados; 0 = todos")
 	root.AddCommand(cmd)
 }

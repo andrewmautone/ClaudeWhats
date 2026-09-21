@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/andrewmautone/claudewhats/internal/memory"
 	"github.com/andrewmautone/claudewhats/internal/store"
@@ -69,6 +72,66 @@ func TestReadJSONAndSearch(t *testing.T) {
 	out = run(t, s, "search", "olha", "--no-spawn")
 	if !strings.Contains(out, "[Família]") || strings.Contains(out, "[123]") {
 		t.Fatal(out)
+	}
+}
+
+func TestReadUntilLimitOut(t *testing.T) {
+	t.Setenv("CLAUDEWHATS_MEMORY_DIR", t.TempDir())
+	s := testStore(t)
+	day := time.Unix(1700000000, 0).Local().Format("2006-01-02")
+
+	out := run(t, s, "read", "maria", "--since", day, "--until", day, "--no-spawn")
+	if !strings.Contains(out, "bom dia") || !strings.Contains(out, "vou levar o bolo") {
+		t.Fatalf("--since/--until should include both messages: %s", out)
+	}
+
+	// A day strictly before the seeded messages returns none with --until.
+	before := time.Unix(1700000000, 0).Local().AddDate(0, 0, -1).Format("2006-01-02")
+	out = run(t, s, "read", "maria", "--until", before, "--no-spawn")
+	if strings.Contains(out, "bom dia") || strings.Contains(out, "vou levar o bolo") {
+		t.Fatalf("--until before messages should return none: %s", out)
+	}
+
+	out = run(t, s, "read", "maria", "--limit", "0", "--no-spawn", "--json")
+	var payload struct {
+		Messages []store.Message `json:"messages"`
+	}
+	if err := json.Unmarshal([]byte(out), &payload); err != nil || len(payload.Messages) != 2 {
+		t.Fatalf("--limit 0 should return all: %v %s", err, out)
+	}
+
+	outFile := filepath.Join(t.TempDir(), "sub", "x.txt")
+	out = run(t, s, "read", "maria", "--out", outFile, "--no-spawn")
+	if !strings.Contains(out, "salvo: "+outFile) || !strings.Contains(out, "(2 mensagens)") {
+		t.Fatalf("expected salvo message: %s", out)
+	}
+	content, err := os.ReadFile(outFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(content), "bom dia") || !strings.Contains(string(content), "vou levar o bolo") || strings.Contains(string(content), "## memória") {
+		t.Fatalf("unexpected file contents: %s", content)
+	}
+
+	outFileJSON := filepath.Join(t.TempDir(), "x.json")
+	out = run(t, s, "read", "maria", "--out", outFileJSON, "--json", "--no-spawn")
+	var savedPayload struct {
+		Saved string `json:"saved"`
+		Count int    `json:"count"`
+	}
+	if err := json.Unmarshal([]byte(out), &savedPayload); err != nil || savedPayload.Saved != outFileJSON || savedPayload.Count != 2 {
+		t.Fatalf("%v %s", err, out)
+	}
+	jsonContent, err := os.ReadFile(outFileJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var filePayload struct {
+		Chat     store.Chat      `json:"chat"`
+		Messages []store.Message `json:"messages"`
+	}
+	if err := json.Unmarshal(jsonContent, &filePayload); err != nil || len(filePayload.Messages) != 2 {
+		t.Fatalf("%v %s", err, jsonContent)
 	}
 }
 

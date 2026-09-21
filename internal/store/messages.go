@@ -171,23 +171,33 @@ func (s *Store) scanMessages(rows *sql.Rows) ([]Message, error) {
 	return out, nil
 }
 
-func (s *Store) ReadMessages(chatJID string, since int64, limit int) ([]Message, error) {
-	if limit <= 0 {
-		limit = 200
+// ReadMessages returns messages for chatJID with ts>=since. until=0 means no
+// upper bound, otherwise ts<=until. limit<=0 means no limit.
+func (s *Store) ReadMessages(chatJID string, since, until int64, limit int) ([]Message, error) {
+	if until <= 0 {
+		until = 1<<63 - 1
 	}
-	rows, err := s.db.Query(`SELECT `+msgCols+` FROM (SELECT * FROM messages WHERE chat_jid=? AND ts>=? ORDER BY ts DESC LIMIT ?) ORDER BY ts ASC`, chatJID, since, limit)
+	if limit <= 0 {
+		limit = -1 // SQLite: negative LIMIT means no limit
+	}
+	rows, err := s.db.Query(`SELECT `+msgCols+` FROM (SELECT * FROM messages WHERE chat_jid=? AND ts>=? AND ts<=? ORDER BY ts DESC LIMIT ?) ORDER BY ts ASC`, chatJID, since, until, limit)
 	if err != nil {
 		return nil, err
 	}
 	return s.scanMessages(rows)
 }
 
-func (s *Store) Search(q, chatJID string, since int64, limit int) ([]Message, error) {
+// Search full-text searches text and transcripts. until=0 means no upper
+// bound. limit<=0 means no limit.
+func (s *Store) Search(q, chatJID string, since, until int64, limit int) ([]Message, error) {
+	if until <= 0 {
+		until = 1<<63 - 1
+	}
 	if limit <= 0 {
-		limit = 50
+		limit = -1
 	}
 	rows, err := s.db.Query(`SELECT `+msgCols+` FROM messages WHERE rowid IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH ?)
-		AND (?='' OR chat_jid=?) AND ts>=? ORDER BY ts DESC LIMIT ?`, ftsQuery(q), chatJID, chatJID, since, limit)
+		AND (?='' OR chat_jid=?) AND ts>=? AND ts<=? ORDER BY ts DESC LIMIT ?`, ftsQuery(q), chatJID, chatJID, since, until, limit)
 	if err != nil {
 		return nil, err
 	}

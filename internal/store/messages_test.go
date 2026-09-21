@@ -60,17 +60,55 @@ func TestReadAndTranscriptAndSearch(t *testing.T) {
 	if err := s.SetTranscript("5511888@s.whatsapp.net", "m2", "vou levar o bolo", "done"); err != nil {
 		t.Fatal(err)
 	}
-	msgs, _ := s.ReadMessages("5511888@s.whatsapp.net", 0, 10)
+	msgs, _ := s.ReadMessages("5511888@s.whatsapp.net", 0, 0, 10)
 	if len(msgs) != 2 || msgs[0].ID != "m1" || msgs[1].Transcript != "vou levar o bolo" || msgs[0].Sender != "Maria" {
 		t.Fatalf("%+v", msgs)
 	}
-	found, _ := s.Search("reunião", "", 0, 10)
+	found, _ := s.Search("reunião", "", 0, 0, 10)
 	if len(found) != 1 || found[0].ID != "m1" {
 		t.Fatalf("fts: %+v", found)
 	}
-	found, _ = s.Search("bolo", "5511888@s.whatsapp.net", 0, 10)
+	found, _ = s.Search("bolo", "5511888@s.whatsapp.net", 0, 0, 10)
 	if len(found) != 1 || found[0].ID != "m2" || found[0].Sender != "eu" {
 		t.Fatalf("filtered search: %+v", found)
+	}
+}
+
+func TestReadMessagesUntilAndUnlimited(t *testing.T) {
+	s := mustMem(t)
+	seed(t, s)
+
+	// until=200 excludes the ts=300 group message but this chat is dm-only anyway;
+	// test within the dm chat which has ts=100 and ts=200.
+	msgs, _ := s.ReadMessages("5511888@s.whatsapp.net", 0, 100, 10)
+	if len(msgs) != 1 || msgs[0].ID != "m1" {
+		t.Fatalf("until should exclude later message: %+v", msgs)
+	}
+	msgs, _ = s.ReadMessages("5511888@s.whatsapp.net", 0, 0, 10)
+	if len(msgs) != 2 {
+		t.Fatalf("until=0 should mean no upper bound: %+v", msgs)
+	}
+
+	// limit<=0 means unlimited.
+	for i := 0; i < 5; i++ {
+		s.InsertMessage(Message{ChatJID: "5511888@s.whatsapp.net", ID: "extra" + string(rune('a'+i)), SenderJID: "5511888@s.whatsapp.net", TS: int64(1000 + i), Type: "text", Text: "x"})
+	}
+	msgs, _ = s.ReadMessages("5511888@s.whatsapp.net", 0, 0, 3)
+	if len(msgs) != 3 {
+		t.Fatalf("limit=3: %+v", msgs)
+	}
+	msgs, _ = s.ReadMessages("5511888@s.whatsapp.net", 0, 0, 0)
+	if len(msgs) != 7 {
+		t.Fatalf("limit=0 should return all 7: %+v", msgs)
+	}
+
+	found, _ := s.Search("reunião", "", 0, 100, 10)
+	if len(found) != 1 {
+		t.Fatalf("search until: %+v", found)
+	}
+	found, _ = s.Search("reunião", "", 0, 0, 0)
+	if len(found) != 1 {
+		t.Fatalf("search unlimited: %+v", found)
 	}
 }
 
