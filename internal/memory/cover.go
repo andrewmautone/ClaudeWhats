@@ -57,7 +57,7 @@ func Cover(T, budget int) [][2]int {
 		return out
 	}
 	lo, hi := 0.0, 1.0
-	for i := 0; i < 60; i++ {
+	for range 60 {
 		mid := (lo + hi) / 2
 		if len(cover(T, mid)) > budget {
 			lo = mid

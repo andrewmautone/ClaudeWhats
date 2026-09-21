@@ -214,7 +214,7 @@ func TestLock(t *testing.T) {
 		t.Fatal(err)
 	}
 	unlock()
-	if _, err := os.Stat(filepath.Join(s.Dir, "LOCK")); err != nil {
+	if _, err := os.Stat(filepath.Join(s.Dir, ".lock")); err != nil {
 		t.Fatal(err)
 	}
 	unlock, err = s.Lock()
@@ -228,11 +228,11 @@ func TestConcurrentNotes(t *testing.T) {
 	s, _ := Open(t.TempDir())
 	const workers, each = 8, 20
 	var wg sync.WaitGroup
-	for w := 0; w < workers; w++ {
+	for w := range workers {
 		wg.Add(1)
 		go func(w int) {
 			defer wg.Done()
-			for i := 0; i < each; i++ {
+			for i := range each {
 				if _, err := s.LogAppend([]string{fmt.Sprintf("w%d-%d", w, i)}); err != nil {
 					t.Error(err)
 				}

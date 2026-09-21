@@ -58,17 +58,22 @@ func (s *Store) Wake(part, T int) (string, error) {
 		return out.String(), nil
 	}
 	var lines []string
+	r := s.reader() // every level and the log opened once for the whole read
+	defer r.close()
 	for _, b := range Cover(T, WakeLines) {
 		lo, hi := b[0], b[1]
 		if hi-lo == 1 {
-			e, err := s.LogGet(lo)
+			es, err := r.logSlice(lo, hi)
 			if err != nil {
 				return "", err
 			}
-			lines = append(lines, e.String())
+			if len(es) == 0 {
+				return "", fmt.Errorf("no memory #%d", lo)
+			}
+			lines = append(lines, es[0].String())
 			continue
 		}
-		sum, ok, err := s.TreeGet(lo, hi)
+		sum, ok, err := r.treeGet(lo, hi)
 		if err != nil {
 			return "", err
 		}
@@ -89,7 +94,7 @@ func (s *Store) Wake(part, T int) (string, error) {
 				return "", fmt.Errorf("Cannot wake: the memory context needs #%d-%d, which is not compressed yet.\nDo the %s below, then run %s wake again.\n\n%s",
 					lo, hi-1, Plural(n, "compression"), ToolName, nap)
 			}
-			sum, ok, err = s.TreeGet(lo, hi) // a parallel session may have paid it
+			sum, ok, err = s.TreeGet(lo, hi) // a parallel session may have paid it: a fresh open
 			if err != nil {
 				return "", err
 			}

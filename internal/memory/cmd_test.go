@@ -349,8 +349,7 @@ func TestSpeed10k(t *testing.T) {
 
 func BenchmarkWake(b *testing.B) {
 	s := bigStore(b)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		s.Wake(1, 0)
 	}
 }
@@ -360,8 +359,7 @@ func BenchmarkWakeCompressed(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		if _, err := s.Wake(1, 0); err != nil {
 			b.Fatal(err)
 		}
@@ -370,16 +368,14 @@ func BenchmarkWakeCompressed(b *testing.B) {
 
 func BenchmarkNote(b *testing.B) {
 	s := bigStore(b)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		s.Note("nova")
 	}
 }
 
 func BenchmarkRecall(b *testing.B) {
 	s := bigStore(b)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		s.Recall("assunto 42")
 	}
 }

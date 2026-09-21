@@ -170,22 +170,87 @@ func records(buf []byte) []Entry {
 	return out
 }
 
-// LogSlice returns memories [lo,hi) in one read.
-func (s *Store) LogSlice(lo, hi int) ([]Entry, error) {
+// reader reads the log and the tree levels, opening each file at most once
+// for as long as it lives: a wake reads ~WakeLines blocks, and an open per
+// block costs more than the read.
+type reader struct {
+	s    *Store
+	log  *os.File
+	tree map[int]*os.File // level size -> file; nil once known missing
+}
+
+func (s *Store) reader() *reader {
+	return &reader{s: s, tree: map[int]*os.File{}}
+}
+
+func (r *reader) close() {
+	if r.log != nil {
+		r.log.Close()
+	}
+	for _, f := range r.tree {
+		if f != nil {
+			f.Close()
+		}
+	}
+}
+
+// logSlice returns memories [lo,hi) in one read.
+func (r *reader) logSlice(lo, hi int) ([]Entry, error) {
 	if hi <= lo {
 		return nil, nil
 	}
-	f, err := os.Open(s.logPath())
-	if err != nil {
-		return nil, err
+	if r.log == nil {
+		f, err := os.Open(r.s.logPath())
+		if err != nil {
+			return nil, err
+		}
+		r.log = f
 	}
-	defer f.Close()
 	buf := make([]byte, (hi-lo)*LogRec)
-	n, err := f.ReadAt(buf, int64(lo)*LogRec)
+	n, err := r.log.ReadAt(buf, int64(lo)*LogRec)
 	if err != nil && err != io.EOF {
 		return nil, err
 	}
 	return records(buf[:n]), nil
+}
+
+// treeGet returns the summary of block [lo,hi), in one seek. ok is false if
+// it is not built yet, or blank.
+func (r *reader) treeGet(lo, hi int) (string, bool, error) {
+	size := hi - lo
+	f, seen := r.tree[size]
+	if !seen {
+		var err error
+		f, err = os.Open(r.s.treePath(size))
+		if err != nil {
+			if !errors.Is(err, os.ErrNotExist) { // any other failure is real
+				return "", false, err
+			}
+			f = nil // not built yet
+		}
+		r.tree[size] = f
+	}
+	if f == nil {
+		return "", false, nil
+	}
+	rec := make([]byte, TreeRec)
+	n, err := f.ReadAt(rec, int64(lo/size)*TreeRec)
+	if err != nil && err != io.EOF {
+		return "", false, err
+	}
+	rec = rec[:n]
+	if !utf8.Valid(rec) {
+		return "", false, fmt.Errorf("The summary of #%d-%d is corrupt. Run: %s forget %d-%d", lo, hi-1, ToolName, lo, hi-1)
+	}
+	text := string(bytes.TrimRight(rec, " \n"))
+	return text, text != "", nil
+}
+
+// LogSlice returns memories [lo,hi) in one read.
+func (s *Store) LogSlice(lo, hi int) ([]Entry, error) {
+	r := s.reader()
+	defer r.close()
+	return r.logSlice(lo, hi)
 }
 
 // LogGet returns memory i, in one seek.
@@ -203,26 +268,9 @@ func (s *Store) LogGet(i int) (Entry, error) {
 // TreeGet returns the summary of block [lo,hi), in one seek. ok is false if
 // it is not built yet, or blank.
 func (s *Store) TreeGet(lo, hi int) (string, bool, error) {
-	size := hi - lo
-	f, err := os.Open(s.treePath(size))
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) { // not built yet; any other failure is real
-			return "", false, nil
-		}
-		return "", false, err
-	}
-	defer f.Close()
-	rec := make([]byte, TreeRec)
-	n, err := f.ReadAt(rec, int64(lo/size)*TreeRec)
-	if err != nil && err != io.EOF {
-		return "", false, err
-	}
-	rec = rec[:n]
-	if !utf8.Valid(rec) {
-		return "", false, fmt.Errorf("The summary of #%d-%d is corrupt. Run: %s forget %d-%d", lo, hi-1, ToolName, lo, hi-1)
-	}
-	text := string(bytes.TrimRight(rec, " \n"))
-	return text, text != "", nil
+	r := s.reader()
+	defer r.close()
+	return r.treeGet(lo, hi)
 }
 
 // pad lays text into one fixed-width record: the text, spaces, a newline.
@@ -253,7 +301,7 @@ func Pad(text string, rec int) []byte {
 func (s *Store) Lock() (unlock func(), err error) {
 	// Open for append, NOT truncating: reopening with O_TRUNC would break
 	// advisory locks held by other processes on Windows.
-	f, err := os.OpenFile(filepath.Join(s.Dir, "LOCK"), os.O_CREATE|os.O_RDWR|os.O_APPEND, 0o600)
+	f, err := os.OpenFile(filepath.Join(s.Dir, ".lock"), os.O_CREATE|os.O_RDWR|os.O_APPEND, 0o600)
 	if err != nil {
 		return nil, err
 	}
