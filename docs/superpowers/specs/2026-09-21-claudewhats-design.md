@@ -101,6 +101,9 @@ apontar pro contato do PN; se ambos já tinham contato, funde (o com `auto=0` ve
      `serve --background` e espera até 15s pelo `/status`. Lock por pidfile evita dois
      daemons.
    - `stop`: comando que pede `POST /shutdown`.
+   - Comandos de leitura (`chats/read/search/summary`) respondem só do banco, mas antes de
+     sair disparam o auto-spawn sem esperar (fire-and-forget) para o daemon ir buscando o
+     backlog; a leitura seguinte vem mais fresca. `--no-spawn` desliga.
 
 ## Comandos
 
@@ -133,7 +136,8 @@ REST `generativelanguage.googleapis.com`, modelo configurável (default `gemini-
 ## Erros
 
 - Gemini falha: job fica `pending` com retry; mensagem já está no banco com `type` e mídia.
-- Daemon fora: `send`/`sync` erram com "daemon não está rodando (claudewhats serve)".
+- Daemon fora: `send`/`sync` fazem auto-spawn; se ele não subir em 15s (ou não estiver
+  pareado) erram com a causa e a instrução "rode `claudewhats serve` para parear".
 - Desconexão do WhatsApp: whatsmeow reconecta; `LoggedOut` → loga e encerra pedindo re-pareamento (nunca re-pareia sozinho).
 
 ## Testes
