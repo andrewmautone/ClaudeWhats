@@ -45,16 +45,27 @@ func memoryStore(cfg *config.Config) (*memory.Store, error) {
 
 // memoryBlock returns the lines of the "## memória" block for chat, or nil
 // when there is nothing to show (or --no-memory). One RecallLines call,
-// matching the chat's jid or contact name, case-insensitively.
+// matching the chat's jid (a LID never appears in memory: its number is used
+// instead, when known) or contact name, case-insensitively.
 func memoryBlock(s *memory.Store, chat store.Chat) []string {
 	if noMemory || s == nil {
 		return nil
 	}
-	pattern := regexp.QuoteMeta(chat.JID)
-	if chat.Name != "" {
-		pattern += "|" + regexp.QuoteMeta(chat.Name)
+	var alts []string
+	if store.KindOf(chat.JID) == "lid" {
+		if chat.Number != "" {
+			alts = append(alts, regexp.QuoteMeta(chat.Number))
+		}
+	} else {
+		alts = append(alts, regexp.QuoteMeta(chat.JID))
 	}
-	lines, err := s.RecallLines(pattern, 20)
+	if chat.Name != "" && chat.Name != "desconhecido" {
+		alts = append(alts, regexp.QuoteMeta(chat.Name))
+	}
+	if len(alts) == 0 {
+		return nil
+	}
+	lines, err := s.RecallLines(strings.Join(alts, "|"), 20)
 	if err != nil || len(lines) == 0 {
 		return nil
 	}

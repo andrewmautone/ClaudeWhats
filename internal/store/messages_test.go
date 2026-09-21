@@ -191,3 +191,29 @@ func TestFindContactRanking(t *testing.T) {
 		t.Fatalf("expected ambiguity, got %v", err)
 	}
 }
+
+func TestListChatsNumberAndLIDName(t *testing.T) {
+	s := mustMem(t)
+	seed(t, s)
+	s.ResolveIdentity("777@lid", "", "")
+	s.UpsertChat("777@lid", "dm", "")
+	s.InsertMessage(Message{ChatJID: "777@lid", ID: "l1", SenderJID: "777@lid", TS: 5, Type: "text", Text: "?"})
+	chats, err := s.ListChats(0, "dm")
+	if err != nil {
+		t.Fatal(err)
+	}
+	byJID := map[string]Chat{}
+	for _, c := range chats {
+		byJID[c.JID] = c
+	}
+	if c := byJID["5511888@s.whatsapp.net"]; c.Number != "5511888" || c.Name != "Maria" {
+		t.Fatalf("%+v", c)
+	}
+	if c := byJID["777@lid"]; c.Number != "" || c.Name != "desconhecido" {
+		t.Fatalf("%+v", c)
+	}
+	c, err := s.ResolveChat("5511888")
+	if err != nil || c.Number != "5511888" {
+		t.Fatalf("%+v %v", c, err)
+	}
+}

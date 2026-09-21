@@ -439,17 +439,43 @@ func (s *Store) ListContacts(q string) ([]Contact, error) {
 	return out, rows.Err()
 }
 
-// ContactName is the display name for a jid: contact name, else push name, else jid user.
+// ContactName is the display name for a jid: contact name, else a push name
+// seen on any identity of the same contact (this jid's first), else the
+// contact's phone number. A LID is never shown: with nothing else to go on
+// the name is "desconhecido".
 func (s *Store) ContactName(jid string) string {
-	var name, push string
-	err := s.db.QueryRow(`SELECT c.name, i.push_name FROM identities i JOIN contacts c ON c.id=i.contact_id WHERE i.jid=?`, jid).Scan(&name, &push)
+	var name, push, pn sql.NullString
+	err := s.db.QueryRow(`SELECT c.name,
+		(SELECT p.push_name FROM identities p WHERE p.contact_id=c.id AND p.push_name<>'' ORDER BY (p.jid=?) DESC LIMIT 1),
+		(SELECT p.jid FROM identities p WHERE p.contact_id=c.id AND p.kind='pn' LIMIT 1)
+		FROM identities i JOIN contacts c ON c.id=i.contact_id WHERE i.jid=?`, jid, jid).Scan(&name, &push, &pn)
 	if err == nil {
-		if name != "" {
-			return name
-		}
-		if push != "" {
-			return push
+		switch {
+		case name.String != "":
+			return name.String
+		case push.String != "":
+			return push.String
+		case pn.String != "":
+			return userPart(pn.String)
 		}
 	}
+	if KindOf(jid) == "lid" {
+		return "desconhecido"
+	}
 	return userPart(jid)
+}
+
+// ContactNumber is the phone number (digits) bound to jid's contact, or "" when
+// only a LID is known.
+func (s *Store) ContactNumber(jid string) string {
+	if KindOf(jid) == "pn" {
+		return userPart(jid)
+	}
+	var pn string
+	err := s.db.QueryRow(`SELECT p.jid FROM identities i JOIN identities p ON p.contact_id=i.contact_id
+		WHERE i.jid=? AND p.kind='pn' LIMIT 1`, jid).Scan(&pn)
+	if err != nil {
+		return ""
+	}
+	return userPart(pn)
 }

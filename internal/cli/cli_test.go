@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/andrewmautone/claudewhats/internal/memory"
 	"github.com/andrewmautone/claudewhats/internal/store"
 )
 
@@ -194,5 +195,48 @@ func TestMemoryCommandsAndBlock(t *testing.T) {
 	}
 	if !strings.Contains(out, "is beyond the memory") {
 		t.Fatalf("%v %s", err, out)
+	}
+}
+
+func TestChatsJSONNumber(t *testing.T) {
+	s := testStore(t)
+	s.ResolveIdentity("777@lid", "", "")
+	s.UpsertChat("777@lid", "dm", "")
+	s.InsertMessage(store.Message{ChatJID: "777@lid", ID: "l1", SenderJID: "777@lid", TS: 1700000300, Type: "text", Text: "?"})
+	out := run(t, s, "chats", "--json", "--no-spawn")
+	var chats []store.Chat
+	if err := json.Unmarshal([]byte(out), &chats); err != nil {
+		t.Fatalf("%v %s", err, out)
+	}
+	nums := map[string]string{}
+	for _, c := range chats {
+		nums[c.JID] = c.Number
+	}
+	if nums["5511888@s.whatsapp.net"] != "5511888" || nums["777@lid"] != "" {
+		t.Fatalf("%v", nums)
+	}
+	if !strings.Contains(out, `"number"`) || strings.Contains(out, `"name": "777"`) {
+		t.Fatal(out)
+	}
+	if !strings.Contains(out, "desconhecido") {
+		t.Fatal(out)
+	}
+}
+
+func TestMemoryBlockSkipsLID(t *testing.T) {
+	m, _, err := memory.Create(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Note("777 gosta de bolo")
+	m.Note("5511777 é o Zé")
+	// LID digits never match memory; a bare LID chat has nothing to search by
+	if lines := memoryBlock(m, store.Chat{JID: "777@lid", Name: "desconhecido"}); lines != nil {
+		t.Fatal(lines)
+	}
+	// the number behind the LID does
+	lines := memoryBlock(m, store.Chat{JID: "777@lid", Number: "5511777"})
+	if len(lines) != 1 || !strings.Contains(lines[0], "Zé") {
+		t.Fatal(lines)
 	}
 }

@@ -30,6 +30,18 @@ type Chat struct {
 	Name      string `json:"name"`
 	LastMsgAt int64  `json:"last_msg_at"`
 	Count     int64  `json:"count"`
+	// Number is the phone number (digits) behind a DM, "" when only a LID is known.
+	Number string `json:"number"`
+}
+
+// fillChat completes a scanned chat row: display name and, for DMs, the number.
+func (s *Store) fillChat(c *Chat) {
+	if c.Name == "" {
+		c.Name = s.ContactName(c.JID)
+	}
+	if c.Kind == "dm" {
+		c.Number = s.ContactNumber(c.JID)
+	}
 }
 
 func (s *Store) UpsertChat(jid, kind, name string) error {
@@ -124,9 +136,7 @@ func (s *Store) ListChats(since int64, kind string) ([]Chat, error) {
 
 	// Fill in display names after closing the rows to avoid deadlock with SetMaxOpenConns(1)
 	for i := range out {
-		if out[i].Name == "" {
-			out[i].Name = s.ContactName(out[i].JID)
-		}
+		s.fillChat(&out[i])
 	}
 	return out, nil
 }
@@ -201,9 +211,7 @@ func (s *Store) ResolveChat(ref string) (Chat, error) {
 	err := s.db.QueryRow(`SELECT jid, kind, name, last_msg_at FROM chats WHERE jid=?`, ref).
 		Scan(&c.JID, &c.Kind, &c.Name, &c.LastMsgAt)
 	if err == nil {
-		if c.Name == "" {
-			c.Name = s.ContactName(c.JID)
-		}
+		s.fillChat(&c)
 		return c, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
@@ -216,9 +224,7 @@ func (s *Store) ResolveChat(ref string) (Chat, error) {
 		err = s.db.QueryRow(`SELECT jid, kind, name, last_msg_at FROM chats WHERE jid=?`, dmJID).
 			Scan(&c.JID, &c.Kind, &c.Name, &c.LastMsgAt)
 		if err == nil {
-			if c.Name == "" {
-				c.Name = s.ContactName(c.JID)
-			}
+			s.fillChat(&c)
 			return c, nil
 		}
 		if !errors.Is(err, sql.ErrNoRows) {
@@ -261,9 +267,7 @@ func (s *Store) ResolveChat(ref string) (Chat, error) {
 		if chats[i].Name == "" {
 			chats[i].Name = names[i][1]
 		}
-		if chats[i].Name == "" {
-			chats[i].Name = s.ContactName(chats[i].JID)
-		}
+		s.fillChat(&chats[i])
 	}
 
 	best := bestMatches(ref, names)

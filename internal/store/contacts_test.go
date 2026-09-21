@@ -115,3 +115,50 @@ func TestSetContactNameIfAuto(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestContactNameNeverShowsLID(t *testing.T) {
+	s := mustMem(t)
+	// LID-only identity with a push name
+	s.ResolveIdentity("111@lid", "", "Pushy")
+	if got := s.ContactName("111@lid"); got != "Pushy" {
+		t.Fatalf("push name: %q", got)
+	}
+	// LID linked to a named PN contact
+	s.AddContact("Zé", "5511777")
+	s.ResolveIdentity("222@lid", "5511777@s.whatsapp.net", "")
+	if got := s.ContactName("222@lid"); got != "Zé" {
+		t.Fatalf("linked name: %q", got)
+	}
+	// push name seen on the PN identity serves the LID too, and vice versa
+	s.ResolveIdentity("5511999@s.whatsapp.net", "", "Fulano")
+	s.ResolveIdentity("333@lid", "5511999@s.whatsapp.net", "")
+	if got := s.ContactName("333@lid"); got != "Fulano" {
+		t.Fatalf("sibling push name: %q", got)
+	}
+	// linked PN without any name: the number
+	s.ResolveIdentity("444@lid", "5511555@s.whatsapp.net", "")
+	if got := s.ContactName("444@lid"); got != "5511555" {
+		t.Fatalf("number: %q", got)
+	}
+	// nothing at all
+	s.ResolveIdentity("555@lid", "", "")
+	if got := s.ContactName("555@lid"); got != "desconhecido" {
+		t.Fatalf("bare lid: %q", got)
+	}
+	if got := s.ContactName("666@lid"); got != "desconhecido" {
+		t.Fatalf("unknown lid: %q", got)
+	}
+	if got := s.ContactName("5511000@s.whatsapp.net"); got != "5511000" {
+		t.Fatalf("unknown pn: %q", got)
+	}
+	// numbers
+	if n := s.ContactNumber("222@lid"); n != "5511777" {
+		t.Fatalf("number for linked lid: %q", n)
+	}
+	if n := s.ContactNumber("555@lid"); n != "" {
+		t.Fatalf("number for bare lid: %q", n)
+	}
+	if n := s.ContactNumber("5511000@s.whatsapp.net"); n != "5511000" {
+		t.Fatalf("number for pn: %q", n)
+	}
+}
