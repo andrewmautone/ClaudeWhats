@@ -1,0 +1,32 @@
+version: 2
+
+builds:
+  - id: claudewhats
+    main: ./cmd/claudewhats
+    binary: claudewhats
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - windows
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - "-s -w -X github.com/andrewmautone/claudewhats/internal/cli.Version={{.Version}}"
+
+archives:
+  - formats: [binary]
+    name_template: "claudewhats_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: checksums.txt
+
+release:
+  github:
+    owner: andrewmautone
+    name: ClaudeWhats
+
+changelog:
+  use: git

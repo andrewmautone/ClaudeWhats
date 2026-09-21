@@ -94,6 +94,14 @@ func TestContactCommands(t *testing.T) {
 	}
 }
 
+func TestVersion(t *testing.T) {
+	s := testStore(t)
+	out := run(t, s, "version")
+	if !strings.Contains(out, "claudewhats dev") {
+		t.Fatal(out)
+	}
+}
+
 func TestParseSince(t *testing.T) {
 	for _, in := range []string{"24h", "7d", "30m", "2026-09-21"} {
 		if _, err := parseSince(in); err != nil {

@@ -11,6 +11,9 @@ import (
 
 var jsonOut bool
 
+// Version is set via ldflags at release build time (see .goreleaser.yaml).
+var Version = "dev"
+
 var root = &cobra.Command{
 	Use:           "claudewhats",
 	Short:         "WhatsApp local archive + Gemini for Claude",
@@ -20,6 +23,15 @@ var root = &cobra.Command{
 
 func init() {
 	root.PersistentFlags().BoolVar(&jsonOut, "json", false, "output JSON")
+	root.AddCommand(&cobra.Command{
+		Use:   "version",
+		Short: "Mostra a versão do binário",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return emit(map[string]any{"version": Version}, func() {
+				printf("claudewhats %s\n", Version)
+			})
+		},
+	})
 }
 
 // emit prints v as JSON when --json, otherwise calls text().
