@@ -7,16 +7,46 @@
   html,body{height:100%;margin:0;background:#111;color:#eee;font-family:-apple-system,Segoe UI,Roboto,sans-serif;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px}
   #frame{background:#fff;padding:20px;border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,.4)}
   #q{width:420px;height:420px;display:block}
-  p{max-width:420px;text-align:center;color:#ccc;font-size:15px;line-height:1.4}
+  #caption{max-width:420px;text-align:center;color:#ccc;font-size:15px;line-height:1.4}
+  #done{display:none;text-align:center;font-size:28px;color:#3ddc84;max-width:420px;line-height:1.4}
 </style>
 </head>
 <body>
   <div id="frame"><img id="q" src="qr.png" width="420" height="420" alt="QR do WhatsApp"></div>
-  <p>WhatsApp &rarr; Aparelhos conectados &rarr; Conectar aparelho.<br>A imagem atualiza sozinha.</p>
+  <p id="caption">Aguardando QR&hellip;</p>
+  <div id="done">&#9989; Conectado! Pode fechar esta p&aacute;gina.</div>
   <script>
-    setInterval(function () {
-      document.getElementById('q').src = 'qr.png?' + Date.now();
-    }, 2000);
+    (function () {
+      var img = document.getElementById('q');
+      var frame = document.getElementById('frame');
+      var caption = document.getElementById('caption');
+      var done = document.getElementById('done');
+      var loaded = false;
+      var errors = 0;
+      var timer = setInterval(function () {
+        img.src = 'qr.png?' + Date.now();
+      }, 2000);
+      function finish() {
+        clearInterval(timer);
+        frame.style.display = 'none';
+        caption.style.display = 'none';
+        done.style.display = 'block';
+      }
+      img.onload = function () {
+        loaded = true;
+        errors = 0;
+        caption.textContent = 'WhatsApp → Aparelhos conectados → Conectar aparelho. A imagem atualiza sozinha.';
+      };
+      img.onerror = function () {
+        errors++;
+        // once we've shown a real QR, a failed reload means qr.png was removed
+        // (paired); before that, a couple of failures just means the daemon
+        // hasn't written the first QR yet.
+        if (loaded || errors >= 3) {
+          finish();
+        }
+      };
+    })();
   </script>
 </body>
 </html>

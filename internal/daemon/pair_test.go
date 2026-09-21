@@ -124,11 +124,11 @@ func TestQRSinkWritesFilesAtomically(t *testing.T) {
 	if _, err := os.Stat(pair.txtPath); !os.IsNotExist(err) {
 		t.Fatal("txt not removed")
 	}
-	if entries, _ := os.ReadDir(dir); len(entries) != 1 {
-		t.Fatalf("clear should leave only qr.html: %v", entries)
+	if _, err := os.Stat(pair.htmlPath); !os.IsNotExist(err) {
+		t.Fatal("html not removed")
 	}
-	if b, err := os.ReadFile(pair.htmlPath); err != nil || !bytes.Equal(b, pairedHTML) {
-		t.Fatalf("qr.html not replaced with paired page: %v", err)
+	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+		t.Fatalf("clear left files: %v", entries)
 	}
 	pairing, updated = pair.snapshot()
 	if pairing || !updated.IsZero() || pair.png() != pair.pngPath {

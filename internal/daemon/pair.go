@@ -17,9 +17,6 @@ import (
 //go:embed qr.html
 var qrHTML []byte
 
-//go:embed paired.html
-var pairedHTML []byte
-
 // pairState is what /status reports about pairing: whether the session is paired,
 // whether the daemon is currently emitting QR codes, when the last one was written,
 // and where the QR files live.
@@ -123,19 +120,17 @@ func (q *qrSink) onQR(code string) {
 	}
 }
 
-// clear removes the QR image/text files (stable and timestamped), replaces
-// qr.html with the "paired" page (so a tab left open shows success instead of
-// a dead image), and leaves the pairing state; called once paired.
+// clear removes the QR files (image, text and html) and leaves the pairing
+// state; called once paired. qr.html doesn't need to be rewritten to announce
+// success: a tab left open detects the missing qr.png itself (see qr.html's
+// script) and switches to its own "conectado" message.
 func (q *qrSink) clear() {
-	for _, p := range []string{q.pair.pngPath, q.pair.txtPath} {
+	for _, p := range []string{q.pair.pngPath, q.pair.txtPath, q.pair.htmlPath} {
 		if err := os.Remove(p); err != nil && !errors.Is(err, os.ErrNotExist) {
 			q.logf("remover %s: %v", p, err)
 		}
 	}
 	q.removeStamped("")
-	if err := writeAtomic(q.pair.htmlPath, pairedHTML); err != nil {
-		q.logf("gravar %s: %v", q.pair.htmlPath, err)
-	}
 	q.htmlWritten = false
 	q.pair.setPairing(false)
 }
