@@ -176,3 +176,14 @@ streaming em blocos de 320 bytes com regex compilada uma vez. `wake` lê apenas 
 registros da cobertura por `seek`. `note` = um `append` + prompt de nap calculado por
 contagem (`stat`), sem leitura. Meta: cada `memory *` < 20 ms com 10k memórias
 (benchmark no plano). Lock de escrita por arquivo (`LOCK`) com `flock`/`LockFileEx`.
+
+## Pareamento pelo chat (`pair`) — adicionado 21/09
+
+`claudewhats pair [--wait] [--timeout 3m] [--json]`: garante o daemon em background; se não
+pareado, o daemon entra em modo pareamento e grava cada QR novo em `~/.claudewhats/qr.png`
+e `qr.txt` (ASCII). `/status` expõe `paired`, `pairing`, `qr_updated_at`. `pair` imprime o
+caminho do PNG (JSON: `{paired, pairing, qr_png, qr_txt, qr_updated_at}`); com `--wait`
+bloqueia até `paired` ou timeout. Após parear, o daemon segue normal (ingestão). A skill:
+lê `qr.png` com Read para mostrar ao usuário e depois roda `pair --wait`. Em background o
+daemon não recusa mais com "não pareado": ele pareia via arquivos. O modo foreground
+(`serve`) continua imprimindo o QR no terminal.
