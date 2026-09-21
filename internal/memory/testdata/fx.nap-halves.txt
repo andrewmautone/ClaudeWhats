@@ -1,0 +1,7 @@
+Compress memories #0-31 into one line of at most 280 bytes.
+Keep what has lasting effect, drop what does not. Invent nothing.
+
+  #0-15 resumo 0-15
+  #16-31 resumo 16-31
+
+Run: claudewhats memory nap 0-31 "<your line>"
