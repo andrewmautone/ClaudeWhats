@@ -48,7 +48,10 @@ func (c *Client) generate(ctx context.Context, parts []part) (string, error) {
 	req.Contents = append(req.Contents, struct {
 		Parts []part `json:"parts"`
 	}{parts})
-	body, _ := json.Marshal(req)
+	body, err := json.Marshal(req)
+	if err != nil {
+		return "", err
+	}
 	url := fmt.Sprintf("%s/v1beta/models/%s:generateContent?key=%s", c.BaseURL, c.Model, c.APIKey)
 	hr, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
 	if err != nil {
@@ -60,7 +63,10 @@ func (c *Client) generate(ctx context.Context, parts []part) (string, error) {
 		return "", err
 	}
 	defer resp.Body.Close()
-	rb, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	rb, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if err != nil {
+		return "", fmt.Errorf("gemini: read response: %w", err)
+	}
 	if resp.StatusCode != 200 {
 		return "", fmt.Errorf("gemini http %d: %s", resp.StatusCode, strings.TrimSpace(string(rb)))
 	}

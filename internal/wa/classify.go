@@ -75,7 +75,7 @@ func Classify(msg *waE2E.Message) Classified {
 	case msg.GetStickerMessage() != nil:
 		m := msg.GetStickerMessage()
 		mime := baseMime(m.GetMimetype())
-		return Classified{Type: "sticker", Mime: mime, Ext: extFor(mime, ""), Media: m}
+		return Classified{Type: "sticker", Mime: mime, Ext: extFor(mime, ""), Media: m, QuotedID: m.GetContextInfo().GetStanzaID()}
 	case msg.GetReactionMessage() != nil:
 		m := msg.GetReactionMessage()
 		return Classified{Type: "reaction", Text: m.GetText(), QuotedID: m.GetKey().GetID()}
