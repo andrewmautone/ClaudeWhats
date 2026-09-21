@@ -123,19 +123,19 @@ func (s *Store) ResolveIdentity(jid, altJID, pushName string) (int64, error) {
 			return 0, err
 		}
 	}
-	// Create new auto contact if jid is unknown
-	if id == 0 {
+	// Determine which contact to use before putIdentity
+	switch {
+	case id == 0 && altID == 0:
+		// Neither jid nor altJID known: create new auto contact
 		id, err = s.newContact(pushName, true)
 		if err != nil {
 			return 0, err
 		}
-	}
-	// Put identity for jid
-	if err := s.putIdentity(jid, id, pushName); err != nil {
-		return 0, err
-	}
-	// Merge if altJID exists and points to different contact
-	if altID != 0 && altID != id {
+	case id == 0 && altID != 0:
+		// jid unknown but altJID known: reuse altJID's contact
+		id = altID
+	case id != 0 && altID != 0 && id != altID:
+		// Both known but different: merge them
 		into, from, err := s.winner(id, altID)
 		if err != nil {
 			return 0, err
@@ -145,7 +145,10 @@ func (s *Store) ResolveIdentity(jid, altJID, pushName string) (int64, error) {
 		}
 		id = into
 	}
-	// Put identity for altJID if provided
+	// Put identities (defer until after merge succeeds)
+	if err := s.putIdentity(jid, id, pushName); err != nil {
+		return 0, err
+	}
 	if altJID != "" && altJID != jid {
 		if err := s.putIdentity(altJID, id, pushName); err != nil {
 			return 0, err

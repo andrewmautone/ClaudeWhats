@@ -40,32 +40,41 @@ func (s *Store) UpsertChat(jid, kind, name string) error {
 }
 
 func (s *Store) SetGroupMembers(chatJID string, jids []string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
 	// Delete existing members
-	if _, err := s.db.Exec(`DELETE FROM group_members WHERE chat_jid=?`, chatJID); err != nil {
+	if _, err := tx.Exec(`DELETE FROM group_members WHERE chat_jid=?`, chatJID); err != nil {
 		return err
 	}
 	// Insert new members
 	for _, jid := range jids {
-		if _, err := s.db.Exec(`INSERT INTO group_members(chat_jid, jid) VALUES (?,?)`, chatJID, jid); err != nil {
+		if _, err := tx.Exec(`INSERT OR IGNORE INTO group_members(chat_jid, jid) VALUES (?,?)`, chatJID, jid); err != nil {
 			return err
 		}
 	}
-	return nil
+	return tx.Commit()
 }
 
 func (s *Store) InsertMessage(m Message) (inserted bool, err error) {
-	_, err = s.db.Exec(`INSERT INTO messages(chat_jid, id, sender_jid, ts, from_me, type, text, media_path, media_mime, transcript, transcript_status, quoted_id, raw_json)
+	res, err := s.db.Exec(`INSERT OR IGNORE INTO messages(chat_jid, id, sender_jid, ts, from_me, type, text, media_path, media_mime, transcript, transcript_status, quoted_id, raw_json)
 		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		m.ChatJID, m.ID, m.SenderJID, m.TS, boolToInt(m.FromMe), m.Type, m.Text, m.MediaPath, m.MediaMime, m.Transcript, m.TranscriptStatus, m.QuotedID, m.RawJSON)
 	if err != nil {
-		// Check if it's a duplicate key error (UNIQUE constraint on (chat_jid, id))
-		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
-			return false, nil
-		}
 		return false, err
 	}
-	// Update last_msg_at in chats
-	_, err = s.db.Exec(`UPDATE chats SET last_msg_at=? WHERE jid=?`, m.TS, m.ChatJID)
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	if affected == 0 {
+		return false, nil
+	}
+	// Update last_msg_at in chats using max() to prevent backfill from moving it backwards
+	_, err = s.db.Exec(`UPDATE chats SET last_msg_at=max(last_msg_at, ?) WHERE jid=?`, m.TS, m.ChatJID)
 	if err != nil {
 		return false, err
 	}

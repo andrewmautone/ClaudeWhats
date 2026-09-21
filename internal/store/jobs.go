@@ -33,7 +33,7 @@ func (s *Store) CompleteJob(id int64) error {
 }
 
 // FailJob updates a job's retry backoff or marks it as failed.
-// Backoff is 30s * 2^attempts. Returns gaveUp=true if maxAttempts reached.
+// Backoff is 30s * 2^(attempts-1). Returns gaveUp=true if maxAttempts reached.
 func (s *Store) FailJob(id, now int64, errMsg string, maxAttempts int) (bool, error) {
 	var j Job
 	if err := s.db.QueryRow(`SELECT id, chat_jid, msg_id, attempts FROM gemini_jobs WHERE id=?`, id).Scan(&j.ID, &j.ChatJID, &j.MsgID, &j.Attempts); err != nil {
@@ -43,7 +43,7 @@ func (s *Store) FailJob(id, now int64, errMsg string, maxAttempts int) (bool, er
 	j.Attempts++
 	if j.Attempts >= maxAttempts {
 		// Mark as failed and delete job
-		if _, err := s.db.Exec(`UPDATE messages SET transcript_status=? WHERE chat_jid=? AND id=?`, "failed", j.ChatJID, j.MsgID); err != nil {
+		if err := s.SetTranscript(j.ChatJID, j.MsgID, "", "failed"); err != nil {
 			return false, err
 		}
 		if _, err := s.db.Exec(`DELETE FROM gemini_jobs WHERE id=?`, id); err != nil {
@@ -52,7 +52,7 @@ func (s *Store) FailJob(id, now int64, errMsg string, maxAttempts int) (bool, er
 		return true, nil
 	}
 
-	// Calculate backoff: 30s * 2^attempts
+	// Calculate backoff: 30s * 2^(attempts-1)
 	backoffSeconds := int64(30) << uint(j.Attempts-1)
 	nextAt := now + backoffSeconds
 

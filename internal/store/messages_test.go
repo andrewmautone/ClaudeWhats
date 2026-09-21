@@ -32,6 +32,28 @@ func TestInsertDedupAndLastMsg(t *testing.T) {
 	}
 }
 
+func TestBackfillDoesNotRegressLastMsgAt(t *testing.T) {
+	s := mustMem(t)
+	// Insert newer message first
+	s.UpsertChat("test@g.us", "group", "Test")
+	s.InsertMessage(Message{ChatJID: "test@g.us", ID: "msg1", SenderJID: "user@s.whatsapp.net", TS: 500, Type: "text", Text: "recent"})
+
+	// Verify last_msg_at is 500
+	chats, _ := s.ListChats(0, "")
+	if len(chats) != 1 || chats[0].LastMsgAt != 500 {
+		t.Fatalf("initial last_msg_at should be 500, got %d", chats[0].LastMsgAt)
+	}
+
+	// Insert older message (backfill scenario)
+	s.InsertMessage(Message{ChatJID: "test@g.us", ID: "msg2", SenderJID: "user@s.whatsapp.net", TS: 100, Type: "text", Text: "older"})
+
+	// Verify last_msg_at stays 500 (should use max)
+	chats, _ = s.ListChats(0, "")
+	if len(chats) != 1 || chats[0].LastMsgAt != 500 {
+		t.Fatalf("backfill should not regress last_msg_at, expected 500 got %d", chats[0].LastMsgAt)
+	}
+}
+
 func TestReadAndTranscriptAndSearch(t *testing.T) {
 	s := mustMem(t)
 	seed(t, s)
