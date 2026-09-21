@@ -24,7 +24,7 @@ func init() {
 // emit prints v as JSON when --json, otherwise calls text().
 func emit(v any, text func()) error {
 	if jsonOut {
-		enc := json.NewEncoder(os.Stdout)
+		enc := json.NewEncoder(out)
 		enc.SetIndent("", "  ")
 		return enc.Encode(v)
 	}
