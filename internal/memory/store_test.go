@@ -2,9 +2,11 @@ package memory
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -220,4 +222,32 @@ func TestLock(t *testing.T) {
 		t.Fatal("relock after unlock", err)
 	}
 	unlock()
+}
+
+func TestConcurrentNotes(t *testing.T) {
+	s, _ := Open(t.TempDir())
+	const workers, each = 8, 20
+	var wg sync.WaitGroup
+	for w := 0; w < workers; w++ {
+		wg.Add(1)
+		go func(w int) {
+			defer wg.Done()
+			for i := 0; i < each; i++ {
+				if _, err := s.LogAppend([]string{fmt.Sprintf("w%d-%d", w, i)}); err != nil {
+					t.Error(err)
+				}
+			}
+		}(w)
+	}
+	wg.Wait()
+	n, _ := s.LogLen()
+	if n != workers*each {
+		t.Fatal(n)
+	}
+	es, _ := s.LogSlice(0, n)
+	for i, e := range es {
+		if e.ID != i || !strings.HasPrefix(e.Text, "w") {
+			t.Fatalf("record %d: %+v", i, e)
+		}
+	}
 }
