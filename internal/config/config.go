@@ -21,8 +21,9 @@ type Config struct {
 	LogPath  string `yaml:"-"`
 	PidPath  string `yaml:"-"`
 	// QR files written by the daemon while pairing (see `claudewhats pair`).
-	QRPNGPath string `yaml:"-"`
-	QRTxtPath string `yaml:"-"`
+	QRPNGPath  string `yaml:"-"`
+	QRTxtPath  string `yaml:"-"`
+	QRHTMLPath string `yaml:"-"`
 }
 
 // Home returns the data directory (CLAUDEWHATS_HOME or ~/.claudewhats).
@@ -61,5 +62,6 @@ func Load() (*Config, error) {
 	cfg.PidPath = filepath.Join(home, "daemon.pid")
 	cfg.QRPNGPath = filepath.Join(home, "qr.png")
 	cfg.QRTxtPath = filepath.Join(home, "qr.txt")
+	cfg.QRHTMLPath = filepath.Join(home, "qr.html")
 	return cfg, nil
 }

@@ -11,6 +11,20 @@ import (
 	"github.com/andrewmautone/claudewhats/internal/daemon"
 )
 
+// stubOpenBrowser replaces openBrowserFn for the test's duration and records
+// every path it was asked to open.
+func stubOpenBrowser(t *testing.T) *[]string {
+	t.Helper()
+	var opened []string
+	orig := openBrowserFn
+	openBrowserFn = func(path string) error {
+		opened = append(opened, path)
+		return nil
+	}
+	t.Cleanup(func() { openBrowserFn = orig })
+	return &opened
+}
+
 // fakeDaemon serves /status from a sequence of responses (the last one repeats)
 // and points daemonClientOverride at it for the test's duration.
 func fakeDaemon(t *testing.T, seq ...daemon.StatusResponse) *int32 {
@@ -31,21 +45,42 @@ func fakeDaemon(t *testing.T, seq ...daemon.StatusResponse) *int32 {
 
 func TestPairShowsQRPath(t *testing.T) {
 	s := testStore(t)
-	fakeDaemon(t, daemon.StatusResponse{OK: true, Pairing: true, QRUpdatedAt: 1700000000, QRPNG: "/h/qr.png", QRTxt: "/h/qr.txt"})
+	fakeDaemon(t, daemon.StatusResponse{OK: true, Pairing: true, QRUpdatedAt: 1700000000, QRPNG: "/h/qr.png", QRTxt: "/h/qr.txt", QRHTML: "/h/qr.html"})
+	opened := stubOpenBrowser(t)
 	out := run(t, s, "pair")
-	if !strings.Contains(out, "QR em: /h/qr.png") || !strings.Contains(out, "Aparelhos conectados") || !strings.Contains(out, "pair --wait") {
+	if !strings.Contains(out, "QR aberto no navegador: /h/qr.html") || !strings.Contains(out, "Aparelhos conectados") || !strings.Contains(out, "pair --wait") {
 		t.Fatal(out)
 	}
+	if len(*opened) != 1 || (*opened)[0] != "/h/qr.html" {
+		t.Fatalf("openBrowserFn calls: %v", *opened)
+	}
+
+	fakeDaemon(t, daemon.StatusResponse{OK: true, Pairing: true, QRUpdatedAt: 1700000000, QRPNG: "/h/qr.png", QRTxt: "/h/qr.txt", QRHTML: "/h/qr.html"})
+	opened = stubOpenBrowser(t)
 	out = run(t, s, "pair", "--json")
 	var res struct {
 		Paired      bool   `json:"paired"`
 		Pairing     bool   `json:"pairing"`
 		QRPNG       string `json:"qr_png"`
 		QRTxt       string `json:"qr_txt"`
+		QRHTML      string `json:"qr_html"`
 		QRUpdatedAt int64  `json:"qr_updated_at"`
 	}
-	if err := json.Unmarshal([]byte(out), &res); err != nil || res.Paired || !res.Pairing || res.QRPNG != "/h/qr.png" || res.QRTxt != "/h/qr.txt" || res.QRUpdatedAt != 1700000000 {
+	if err := json.Unmarshal([]byte(out), &res); err != nil || res.Paired || !res.Pairing || res.QRPNG != "/h/qr.png" || res.QRTxt != "/h/qr.txt" || res.QRHTML != "/h/qr.html" || res.QRUpdatedAt != 1700000000 {
 		t.Fatalf("%v %s", err, out)
+	}
+	if len(*opened) != 1 || (*opened)[0] != "/h/qr.html" {
+		t.Fatalf("openBrowserFn calls: %v", *opened)
+	}
+
+	fakeDaemon(t, daemon.StatusResponse{OK: true, Pairing: true, QRUpdatedAt: 1700000000, QRPNG: "/h/qr.png", QRTxt: "/h/qr.txt", QRHTML: "/h/qr.html"})
+	opened = stubOpenBrowser(t)
+	out = run(t, s, "pair", "--open=false")
+	if !strings.Contains(out, "QR em: /h/qr.html") {
+		t.Fatal(out)
+	}
+	if len(*opened) != 0 {
+		t.Fatalf("openBrowserFn should not be called with --open=false: %v", *opened)
 	}
 }
 
@@ -64,13 +99,14 @@ func TestPairAlreadyPaired(t *testing.T) {
 
 func TestPairWaitUntilPaired(t *testing.T) {
 	s := testStore(t)
-	pairing := daemon.StatusResponse{OK: true, Pairing: true, QRUpdatedAt: 1700000000, QRPNG: "/h/qr-1700000000.png", QRTxt: "/h/qr.txt"}
-	refreshed := daemon.StatusResponse{OK: true, Pairing: true, QRUpdatedAt: 1700000020, QRPNG: "/h/qr-1700000020.png", QRTxt: "/h/qr.txt"}
+	pairing := daemon.StatusResponse{OK: true, Pairing: true, QRUpdatedAt: 1700000000, QRPNG: "/h/qr-1700000000.png", QRTxt: "/h/qr.txt", QRHTML: "/h/qr.html"}
+	refreshed := daemon.StatusResponse{OK: true, Pairing: true, QRUpdatedAt: 1700000020, QRPNG: "/h/qr-1700000020.png", QRTxt: "/h/qr.txt", QRHTML: "/h/qr.html"}
 	paired := daemon.StatusResponse{OK: true, Paired: true}
+	stubOpenBrowser(t)
 	calls := fakeDaemon(t, pairing, refreshed, refreshed, paired)
 	out := run(t, s, "pair", "--wait")
 	lines := strings.Split(strings.TrimSpace(out), "\n")
-	if !strings.Contains(out, "QR em: /h/qr-1700000000.png") || lines[len(lines)-1] != "pareado" || atomic.LoadInt32(calls) < 4 {
+	if !strings.Contains(out, "QR aberto no navegador: /h/qr.html") || lines[len(lines)-1] != "pareado" || atomic.LoadInt32(calls) < 4 {
 		t.Fatalf("%d %s", *calls, out)
 	}
 	// one "QR novo" per change of qr_updated_at, not per poll
@@ -79,6 +115,7 @@ func TestPairWaitUntilPaired(t *testing.T) {
 	}
 
 	fakeDaemon(t, pairing, refreshed, refreshed, paired)
+	stubOpenBrowser(t)
 	out = run(t, s, "pair", "--wait", "--json")
 	lines = strings.Split(strings.TrimSpace(out), "\n")
 	if len(lines) != 3 {
@@ -100,7 +137,8 @@ func TestPairWaitUntilPaired(t *testing.T) {
 
 func TestPairWaitTimeout(t *testing.T) {
 	s := testStore(t)
-	fakeDaemon(t, daemon.StatusResponse{OK: true, Pairing: true, QRUpdatedAt: 1700000000, QRPNG: "/h/qr.png"})
+	fakeDaemon(t, daemon.StatusResponse{OK: true, Pairing: true, QRUpdatedAt: 1700000000, QRPNG: "/h/qr.png", QRHTML: "/h/qr.html"})
+	stubOpenBrowser(t)
 	_, err := runWith(s, "pair", "--wait", "--timeout", "600ms")
 	if err == nil || !strings.Contains(err.Error(), "tempo esgotado") {
 		t.Fatalf("%v", err)

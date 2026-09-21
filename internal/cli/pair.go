@@ -13,6 +13,7 @@ import (
 
 func init() {
 	var wait bool
+	var openFlag bool
 	var timeout time.Duration
 	cmd := &cobra.Command{
 		Use:   "pair",
@@ -42,8 +43,23 @@ Com --wait, bloqueia até o WhatsApp confirmar o pareamento ou --timeout.`,
 			if st.Paired {
 				return emit(map[string]any{"paired": true}, func() { printf("já pareado\n") })
 			}
+			// Reading the terminal QR (or the raw PNG) rarely scans reliably; the
+			// HTML page reloads qr.png every 2s, so opening it once is enough for
+			// the whole pairing session.
+			opened := false
+			if openFlag {
+				if err := openBrowserFn(st.QRHTML); err != nil {
+					warnf("abrir navegador: %v", err)
+				} else {
+					opened = true
+				}
+			}
 			showQR := func() {
-				printf("QR em: %s\n", st.QRPNG)
+				if opened {
+					printf("QR aberto no navegador: %s\n", st.QRHTML)
+				} else {
+					printf("QR em: %s\n", st.QRHTML)
+				}
 				printf("Escaneie no WhatsApp > Aparelhos conectados > Conectar aparelho.\n")
 			}
 			if !wait {
@@ -57,7 +73,7 @@ Com --wait, bloqueia até o WhatsApp confirmar o pareamento ou --timeout.`,
 			// per line so a reader can act on each event as it arrives.
 			announce := func(st daemon.StatusResponse, first bool) {
 				if jsonOut {
-					printJSONLine(map[string]any{"event": "qr", "qr_png": st.QRPNG, "qr_txt": st.QRTxt, "qr_updated_at": st.QRUpdatedAt})
+					printJSONLine(map[string]any{"event": "qr", "qr_png": st.QRPNG, "qr_txt": st.QRTxt, "qr_html": st.QRHTML, "qr_updated_at": st.QRUpdatedAt})
 				} else if first {
 					showQR()
 				} else {
@@ -91,6 +107,7 @@ Com --wait, bloqueia até o WhatsApp confirmar o pareamento ou --timeout.`,
 		},
 	}
 	cmd.Flags().BoolVar(&wait, "wait", false, "espera o WhatsApp confirmar o pareamento")
+	cmd.Flags().BoolVar(&openFlag, "open", true, "abre a página do QR no navegador")
 	cmd.Flags().DurationVar(&timeout, "timeout", 3*time.Minute, "tempo máximo do --wait")
 	root.AddCommand(cmd)
 }
@@ -101,7 +118,7 @@ func printJSONLine(v any) {
 }
 
 func pairJSON(st daemon.StatusResponse) map[string]any {
-	return map[string]any{"paired": st.Paired, "pairing": st.Pairing, "qr_png": st.QRPNG, "qr_txt": st.QRTxt, "qr_updated_at": st.QRUpdatedAt}
+	return map[string]any{"paired": st.Paired, "pairing": st.Pairing, "qr_png": st.QRPNG, "qr_txt": st.QRTxt, "qr_html": st.QRHTML, "qr_updated_at": st.QRUpdatedAt}
 }
 
 // pollStatus queries /status every 500ms until done(st) or max elapses. ok is

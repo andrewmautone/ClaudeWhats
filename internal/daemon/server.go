@@ -36,6 +36,7 @@ type StatusResponse struct {
 	QRUpdatedAt int64  `json:"qr_updated_at"`
 	QRPNG       string `json:"qr_png"`
 	QRTxt       string `json:"qr_txt"`
+	QRHTML      string `json:"qr_html"`
 	Messages    int64  `json:"messages"`
 	PendingJobs int64  `json:"pending_jobs"`
 	PID         int    `json:"pid"`
@@ -127,7 +128,7 @@ func (s *Server) Handler() http.Handler {
 		st := StatusResponse{OK: true, Connected: wa != nil && wa.IsConnected(), Messages: msgs, PendingJobs: jobs, PID: os.Getpid()}
 		if s.Pair != nil {
 			st.Paired = s.Pair.isPaired()
-			st.QRPNG, st.QRTxt = s.Pair.png(), s.Pair.txtPath
+			st.QRPNG, st.QRTxt, st.QRHTML = s.Pair.png(), s.Pair.txtPath, s.Pair.htmlPath
 			var at time.Time
 			st.Pairing, at = s.Pair.snapshot()
 			if !at.IsZero() {
@@ -249,7 +250,7 @@ func Run(ctx context.Context, cfg *config.Config, background bool, showQR func(s
 	var stopOnce sync.Once
 	shutdown := func() { stopOnce.Do(cancel) }
 
-	pair := &pairState{pngPath: cfg.QRPNGPath, txtPath: cfg.QRTxtPath, paired: client.IsPaired()}
+	pair := &pairState{pngPath: cfg.QRPNGPath, txtPath: cfg.QRTxtPath, htmlPath: cfg.QRHTMLPath, paired: client.IsPaired()}
 	sink := &qrSink{pair: pair, show: showQR, log: logger}
 	sink.clear() // stale files from an earlier daemon
 

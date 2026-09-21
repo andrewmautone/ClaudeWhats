@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"bytes"
+	_ "embed"
 	"errors"
 	"os"
 	"path/filepath"
@@ -13,11 +14,17 @@ import (
 	qrcode "github.com/skip2/go-qrcode"
 )
 
+//go:embed qr.html
+var qrHTML []byte
+
+//go:embed paired.html
+var pairedHTML []byte
+
 // pairState is what /status reports about pairing: whether the session is paired,
 // whether the daemon is currently emitting QR codes, when the last one was written,
 // and where the QR files live.
 type pairState struct {
-	pngPath, txtPath string
+	pngPath, txtPath, htmlPath string
 
 	mu        sync.Mutex
 	paired    bool
@@ -78,10 +85,20 @@ type qrSink struct {
 	pair *pairState
 	show func(code string)
 	log  interface{ Printf(string, ...any) }
+
+	// htmlWritten tracks whether qr.html was already written for the current
+	// pairing session, so we don't rewrite it (and reload the tab) on every QR.
+	htmlWritten bool
 }
 
 func (q *qrSink) onQR(code string) {
 	q.pair.setPairing(true)
+	if !q.htmlWritten {
+		if err := writeAtomic(q.pair.htmlPath, qrHTML); err != nil {
+			q.logf("gravar %s: %v", q.pair.htmlPath, err)
+		}
+		q.htmlWritten = true
+	}
 	var txt bytes.Buffer
 	qrterminal.GenerateHalfBlock(code, qrterminal.L, &txt)
 	if err := writeAtomic(q.pair.txtPath, txt.Bytes()); err != nil {
@@ -106,8 +123,9 @@ func (q *qrSink) onQR(code string) {
 	}
 }
 
-// clear removes the QR files (stable and timestamped) and leaves the pairing
-// state; called once paired.
+// clear removes the QR image/text files (stable and timestamped), replaces
+// qr.html with the "paired" page (so a tab left open shows success instead of
+// a dead image), and leaves the pairing state; called once paired.
 func (q *qrSink) clear() {
 	for _, p := range []string{q.pair.pngPath, q.pair.txtPath} {
 		if err := os.Remove(p); err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -115,6 +133,10 @@ func (q *qrSink) clear() {
 		}
 	}
 	q.removeStamped("")
+	if err := writeAtomic(q.pair.htmlPath, pairedHTML); err != nil {
+		q.logf("gravar %s: %v", q.pair.htmlPath, err)
+	}
+	q.htmlWritten = false
 	q.pair.setPairing(false)
 }
 

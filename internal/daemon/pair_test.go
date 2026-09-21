@@ -67,7 +67,7 @@ func TestStatusWhilePairing(t *testing.T) {
 
 func TestQRSinkWritesFilesAtomically(t *testing.T) {
 	dir := t.TempDir()
-	pair := &pairState{pngPath: filepath.Join(dir, "qr.png"), txtPath: filepath.Join(dir, "qr.txt")}
+	pair := &pairState{pngPath: filepath.Join(dir, "qr.png"), txtPath: filepath.Join(dir, "qr.txt"), htmlPath: filepath.Join(dir, "qr.html")}
 	shown := ""
 	sink := &qrSink{pair: pair, show: func(code string) { shown = code }}
 
@@ -110,8 +110,11 @@ func TestQRSinkWritesFilesAtomically(t *testing.T) {
 		t.Fatal("unique png differs from qr.png")
 	}
 	entries, _ := os.ReadDir(dir)
-	if len(entries) != 3 {
-		t.Fatalf("expected qr.png, qr.txt and one qr-*.png: %v", entries)
+	if len(entries) != 4 {
+		t.Fatalf("expected qr.png, qr.txt, qr.html and one qr-*.png: %v", entries)
+	}
+	if b, err := os.ReadFile(pair.htmlPath); err != nil || !bytes.Equal(b, qrHTML) {
+		t.Fatalf("qr.html not written: %v", err)
 	}
 
 	sink.clear()
@@ -121,8 +124,11 @@ func TestQRSinkWritesFilesAtomically(t *testing.T) {
 	if _, err := os.Stat(pair.txtPath); !os.IsNotExist(err) {
 		t.Fatal("txt not removed")
 	}
-	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
-		t.Fatalf("clear left files: %v", entries)
+	if entries, _ := os.ReadDir(dir); len(entries) != 1 {
+		t.Fatalf("clear should leave only qr.html: %v", entries)
+	}
+	if b, err := os.ReadFile(pair.htmlPath); err != nil || !bytes.Equal(b, pairedHTML) {
+		t.Fatalf("qr.html not replaced with paired page: %v", err)
 	}
 	pairing, updated = pair.snapshot()
 	if pairing || !updated.IsZero() || pair.png() != pair.pngPath {
