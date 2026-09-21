@@ -44,7 +44,7 @@ func init() {
 			kick(cfg)
 			return emit(msgs, func() {
 				for _, m := range msgs {
-					printf("[%s] ", s.ContactName(m.ChatJID))
+					printf("[%s] ", s.ChatName(m.ChatJID))
 					printMessages([]store.Message{m})
 				}
 			})

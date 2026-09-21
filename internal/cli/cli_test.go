@@ -56,7 +56,12 @@ func TestReadJSONAndSearch(t *testing.T) {
 		t.Fatalf("%v %s", err, out)
 	}
 	out = run(t, s, "search", "bolo", "--no-spawn")
-	if !strings.Contains(out, "m2") && !strings.Contains(out, "bolo") {
+	if !strings.Contains(out, "[Maria]") || !strings.Contains(out, "bolo") {
+		t.Fatal(out)
+	}
+	// group hits are labelled with the group name, not the jid digits
+	out = run(t, s, "search", "olha", "--no-spawn")
+	if !strings.Contains(out, "[Família]") || strings.Contains(out, "[123]") {
 		t.Fatal(out)
 	}
 }

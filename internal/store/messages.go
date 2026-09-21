@@ -283,6 +283,15 @@ func (s *Store) ResolveChat(ref string) (Chat, error) {
 	return chats[0], nil
 }
 
+// ChatName is the display name for a chat jid: chats.name (groups), else the contact name.
+func (s *Store) ChatName(jid string) string {
+	var name string
+	if err := s.db.QueryRow(`SELECT name FROM chats WHERE jid=?`, jid).Scan(&name); err == nil && name != "" {
+		return name
+	}
+	return s.ContactName(jid)
+}
+
 func (s *Store) GetMessage(chatJID, id string) (Message, bool, error) {
 	rows, err := s.db.Query(`SELECT `+msgCols+` FROM messages WHERE chat_jid=? AND id=?`, chatJID, id)
 	if err != nil {

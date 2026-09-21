@@ -27,3 +27,4 @@ Tudo é lido do banco local; nada aqui abre janela. Sempre use `--json` para par
 3. `contact link` só quando o usuário pedir explicitamente para juntar duas identidades (ex.: "o 55...@lid do grupo é a Maria").
 4. Se `transcript_status` vier `pending` em muitas mensagens, avise que a transcrição ainda está rodando e ofereça tentar de novo.
 5. Ambiguidade no `<chat>` volta erro listando candidatos: pergunte ao usuário qual.
+6. `send` só com pedido explícito do usuário: confirme com ele o chat e o texto exatos antes de rodar com `--yes`. Nunca envie por iniciativa própria.
