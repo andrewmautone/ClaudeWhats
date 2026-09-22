@@ -1,6 +1,6 @@
 {
   "name": "claudewhats",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "WhatsApp local (SQLite) com transcrição Gemini, exposto como CLI e skill para o Claude",
   "author": {
     "name": "Andrew Mautone",
