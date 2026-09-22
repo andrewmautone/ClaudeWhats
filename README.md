@@ -31,7 +31,11 @@ This installs the skill and puts `claudewhats` on Claude's PATH through small sh
 
 ### 2. Add your Gemini API key
 
-Create `~/.claudewhats/config.yaml`:
+Get a free key at https://aistudio.google.com/apikey — the free tier is enough for personal use.
+
+**Automatic (talk to Claude):** paste the key in chat — *"here's my Gemini key: AIza..."* — and Claude stores it with `claudewhats config set gemini_api_key <key>`. Ask `claudewhats config show` any time to confirm it's set (the key itself is always masked, never echoed back).
+
+**Manual:** create `~/.claudewhats/config.yaml`:
 
 ```yaml
 gemini_api_key: AIza...        # required for transcription and summaries
@@ -40,7 +44,7 @@ gemini_api_key: AIza...        # required for transcription and summaries
 # idle_timeout: 30m                # background daemon exits after this idle time
 ```
 
-Or set the environment variable `GEMINI_API_KEY`. Get a key at https://aistudio.google.com/apikey — the free tier is enough for personal use.
+Or set the environment variable `GEMINI_API_KEY` (this always overrides the file).
 
 **What Gemini is used for** (and nothing else):
 
@@ -54,9 +58,9 @@ Text messages never go to Gemini. Without a key everything still works — audio
 
 ### 3. Pair your WhatsApp
 
-Just ask Claude: **"pair my WhatsApp"**. Claude runs `claudewhats pair`, which starts the daemon in the background and opens a page in your browser showing the QR code (it refreshes itself every 2 s and turns into "✅ Connected" when done). On your phone: WhatsApp → **Linked devices** → **Link a device** → scan.
+**Automatic (talk to Claude):** just ask **"pair my WhatsApp"**. Claude runs `claudewhats pair`, which starts the daemon in the background and opens a page in your browser showing the QR code (it refreshes itself every 2 s and turns into "✅ Connected" when done). On your phone: WhatsApp → **Linked devices** → **Link a device** → scan.
 
-Manual alternatives:
+**Manual:**
 
 ```
 claudewhats pair --wait      # opens the QR page and waits until paired
@@ -78,6 +82,7 @@ claudewhats sync "<chat>" --count 100                # request older history fro
 claudewhats send "<chat>" "<text>" --yes
 claudewhats contact add|list|link|rename
 claudewhats memory wake|note|nap|recall|zoom|forget
+claudewhats config show|set|path
 claudewhats status | stop | version
 ```
 

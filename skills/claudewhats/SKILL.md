@@ -19,6 +19,10 @@ Pareamento (primeira vez, ou depois de um logout): se `claudewhats status --json
 
 Fallback se abrir o navegador falhar (ambiente sem GUI, `--open=false`, etc.): use a ferramenta Read no caminho `qr_png` para mostrar o QR ao usuário. Alternativa no terminal do usuário: `claudewhats serve` (foreground) imprime o QR direto no terminal.
 
+### Setup pelo chat
+
+Tudo que o README descreve como manual também pode ser feito pelo chat: se o usuário colar uma key do Gemini, rode `claudewhats config set gemini_api_key <key>` (nunca repita a key na resposta; confirme com `config show`); se pedir para mudar modelo/porta/idle, use `config set`; para parear, o fluxo de `pair`; para ver o estado, `status --json` e `config show --json`. Se `status`/`summary` acusarem key ausente, peça a key ao usuário e explique em 1 linha para que ela serve (transcrever áudios/descrever imagens/resumir) e onde obter (https://aistudio.google.com/apikey).
+
 ## Comandos
 
 - `claudewhats status --json` — daemon rodando? conectado? `paired`/`pairing` (+ `qr_png` enquanto pareia)? quantas msgs.
@@ -32,6 +36,7 @@ Fallback se abrir o navegador falhar (ambiente sem GUI, `--open=false`, etc.): u
 - `claudewhats pair [--wait] [--open=true] [--timeout 3m] --json` — pareia via página HTML (abre sozinha no navegador, `--open=false` desliga): `{paired, pairing, qr_png, qr_txt, qr_html, qr_updated_at}`; com `--wait` imprime um JSON por linha (`{"event":"qr","qr_png":...,"qr_html":...}` a cada QR novo) e termina com `{"paired":true}`.
 - `claudewhats serve [--background] [--idle 30m]` — inicia o daemon (background mode com log e idle timeout; foreground imprime o QR no terminal).
 - `claudewhats stop` — encerra o daemon em background.
+- `claudewhats config show [--json]` / `config set <chave> <valor>` / `config path` — vê e altera `gemini_api_key`, `gemini_model`, `port`, `idle_timeout` (`config show` mascara a key; `config set` nunca a ecoa).
 
 ### Memória (`claudewhats memory`)
 

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -346,5 +347,113 @@ func TestMemoryBlockSkipsLID(t *testing.T) {
 	lines := memoryBlock(m, store.Chat{JID: "777@lid", Number: "5511777"})
 	if len(lines) != 1 || !strings.Contains(lines[0], "Zé") {
 		t.Fatal(lines)
+	}
+}
+
+func TestConfigSetAndShow(t *testing.T) {
+	t.Setenv("CLAUDEWHATS_HOME", t.TempDir())
+	t.Setenv("GEMINI_API_KEY", "")
+	out, err := runWith(nil, "config", "set", "gemini_api_key", "AIzaSyABCDEFGHIJKL1234")
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	if !strings.Contains(out, "ok: gemini_api_key definido") {
+		t.Fatal(out)
+	}
+	out, err = runWith(nil, "config", "show")
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	if strings.Contains(out, "AIzaSyABCDEFGHIJKL1234") {
+		t.Fatalf("key leaked unmasked: %s", out)
+	}
+	if !strings.Contains(out, "AIza…1234") {
+		t.Fatalf("expected masked key, got: %s", out)
+	}
+	if !strings.Contains(out, "config.yaml") {
+		t.Fatalf("expected source config.yaml: %s", out)
+	}
+}
+
+func TestConfigSetInvalidPort(t *testing.T) {
+	t.Setenv("CLAUDEWHATS_HOME", t.TempDir())
+	_, err := runWith(nil, "config", "set", "port", "not-a-number")
+	if err == nil {
+		t.Fatal("expected error for invalid port")
+	}
+	_, err = runWith(nil, "config", "set", "port", "70000")
+	if err == nil {
+		t.Fatal("expected error for out-of-range port")
+	}
+}
+
+func TestConfigSetPreservesUnknownKey(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("CLAUDEWHATS_HOME", home)
+	if err := os.WriteFile(filepath.Join(home, "config.yaml"), []byte("future_flag: keep-me\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runWith(nil, "config", "set", "gemini_model", "gemini-2.5-pro"); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(filepath.Join(home, "config.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), "future_flag: keep-me") {
+		t.Fatalf("unknown key was dropped: %s", b)
+	}
+	if !strings.Contains(string(b), "gemini_model: gemini-2.5-pro") {
+		t.Fatalf("new key missing: %s", b)
+	}
+}
+
+func TestConfigSetFileModeNotWorldReadable(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("file mode bits are not meaningful on windows")
+	}
+	home := t.TempDir()
+	t.Setenv("CLAUDEWHATS_HOME", home)
+	if _, err := runWith(nil, "config", "set", "gemini_api_key", "secret"); err != nil {
+		t.Fatal(err)
+	}
+	fi, err := os.Stat(filepath.Join(home, "config.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fi.Mode().Perm()&0o077 != 0 {
+		t.Fatalf("config.yaml is not private: %v", fi.Mode())
+	}
+}
+
+func TestConfigPath(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("CLAUDEWHATS_HOME", home)
+	out, err := runWith(nil, "config", "path")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, filepath.Join(home, "config.yaml")) {
+		t.Fatalf("unexpected path output: %s", out)
+	}
+}
+
+func TestConfigShowEnvOverridesKeySource(t *testing.T) {
+	t.Setenv("CLAUDEWHATS_HOME", t.TempDir())
+	t.Setenv("GEMINI_API_KEY", "AIzaEnvKeyValue1234")
+	out, err := runWith(nil, "config", "show", "--json")
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatal(err)
+	}
+	keyInfo := payload["gemini_api_key"].(map[string]any)
+	if keyInfo["source"] != "env" {
+		t.Fatalf("expected env source, got %v", payload)
+	}
+	if strings.Contains(out, "AIzaEnvKeyValue1234") {
+		t.Fatalf("key leaked unmasked: %s", out)
 	}
 }
