@@ -4,6 +4,14 @@ A local, searchable archive of your WhatsApp account, built as a **Claude Code p
 
 Everything stays on your computer. Nothing is uploaded except the media sent to Gemini for transcription.
 
+> [!WARNING]
+> **Your WhatsApp account can be banned.** ClaudeWhats connects through [whatsmeow](https://github.com/tulir/whatsmeow), an **unofficial** implementation of the WhatsApp Web protocol. It is not affiliated with or endorsed by WhatsApp/Meta, and automated clients go against WhatsApp's Terms of Service. Use it at your own risk — the author is not responsible for banned or restricted accounts.
+>
+> - **Never use it for bulk or automated sending.** Mass messages, broadcasts, cold outreach, messaging people who don't have your number saved, or sending many messages in a short time are the fastest way to get a number banned — often permanently, with no appeal.
+> - Reading and archiving your own chats is low-risk; **sending** is where the risk lives. `send` is meant for an occasional reply that you asked for and confirmed, one at a time.
+> - Use your personal account the way you would use it by hand. For business or high-volume messaging, use the official [WhatsApp Business Platform](https://business.whatsapp.com/products/business-platform) instead.
+> - Consider testing first with a secondary number you can afford to lose.
+
 ## What you can ask Claude
 
 - "What did Maria say this morning?" / "Read the *Family* group"
@@ -96,7 +104,7 @@ claudewhats status | stop | version
 - **Safety.** The daemon marks nothing as read and reports presence as *unavailable*, so notifications on your phone keep working. It never re-pairs by itself. `send` requires an explicit request and confirmation.
 - **Storage.** `~/.claudewhats/data.db` (messages, contacts, WhatsApp session), `media/` (downloaded audio/images), `memory/`, `exports/`.
 
-Built on [whatsmeow](https://github.com/tulir/whatsmeow) (unofficial WhatsApp Web API — use a personal account and be mindful of WhatsApp's terms).
+Built on [whatsmeow](https://github.com/tulir/whatsmeow) (unofficial WhatsApp Web API — see the ban-risk warning at the top; never use it for bulk sending).
 
 ## Updating
 
